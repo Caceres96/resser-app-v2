@@ -4,7 +4,7 @@ import {
 } from './reglas.js';
 import { lireTicket, lireTicketPdf, apparier, ajouterLibelle, libellesDe, detecterDate, detecterEnseigne, detecterTotal, requeteRecherche } from './ticket.js';
 
-const APP_VERSION = '1.2.0-beta';
+const APP_VERSION = '1.3.0-beta';
 // Version bêta : stockage séparé de l'application stable (même origine github.io, autre clé),
 // pour qu'une erreur ici ne touche jamais l'inventaire de la version stable.
 const KEY = 'resser.v2';
@@ -1057,56 +1057,78 @@ function controlTotal(t) {
 const boton = (accion, texto, clase) => `<button type="button" class="${clase}" data-a="${accion}">${texto}</button>`;
 const euros = (p) => (p == null ? '' : `${p.toFixed(2).replace('.', ',')} €`);
 
+// Groupes de lignes, dans l'ordre où elles demandent une action. Les groupes ouverts restent ouverts d'un rendu à l'autre.
+const GRUPOS = [
+  { etat: 'probable', titre: 'À confirmer', ouvert: true },
+  { etat: 'aucun', titre: 'À identifier', ouvert: true },
+  { etat: 'sur', titre: 'Reconnus', ouvert: false },
+  { etat: 'achat', titre: 'Achats ajoutés', ouvert: false },
+  { etat: 'ignore', titre: 'Ignorées', ouvert: false },
+];
+const gruposAbiertos = new Set(GRUPOS.filter((g) => g.ouvert).map((g) => g.etat));
+
+// Libellé modifiable tant que l'achat n'est pas ajouté : corrige une erreur de lecture avant qu'elle soit apprise.
+const libEditable = (l, i) => `<input class="lib lib-edit" data-li="${i}" value="${esc(l.libelle)}" aria-label="Libellé lu sur le ticket (modifiable)" spellcheck="false">`;
+const precio = (l) => `<span class="prix">${l.qte > 1 ? `${l.qte} × ` : ''}${euros(l.prix)}</span>`;
+
+function pintarLinea(l, i) {
+  if (l.etat === 'probable') {
+    return `<div class="linea" data-i="${i}"><div class="cab">${libEditable(l, i)}${precio(l)}</div>
+      <div class="que">C'est <strong>${esc(l.nom)}</strong> ?</div>
+      <div class="actions">${boton('oui', 'Oui', 'primary')}${boton('non', 'Non', 'ghost')}</div></div>`;
+  }
+  if (l.etat === 'aucun') {
+    return `<div class="linea" data-i="${i}"><div class="cab">${libEditable(l, i)}${precio(l)}</div>
+      ${pintarSugerencias(l)}
+      <div class="actions">${boton('scanner', 'Scanner', 'primary')}${boton('sugerir', 'Chercher par le nom', 'secondary')}${boton('ignorer', 'Ignorer', 'ghost')}</div></div>`;
+  }
+  if (l.etat === 'sur') {
+    return `<div class="fila" data-i="${i}"><span class="fila-txt"><strong>${esc(l.nom)}</strong><span class="lib">${esc(l.libelle)}</span></span>${precio(l)}${boton('non', 'Pas ça', 'lnk')}</div>`;
+  }
+  if (l.etat === 'achat') {
+    return `<div class="fila" data-i="${i}"><span class="fila-txt"><strong>✓ ${esc(l.nom)}</strong><span class="lib">${esc(l.libelle)}</span></span>${precio(l)}</div>`;
+  }
+  return `<div class="fila" data-i="${i}"><span class="fila-txt"><span class="lib">${esc(l.libelle)}</span></span>${precio(l)}${boton('retablir', 'Rétablir', 'lnk')}</div>`;
+}
+
 function pintarTicket() {
   const vista = $('#ticket-vista');
   const t = db.tickets.find((x) => x.id === ticketVu) || db.tickets[0];
   if (!t) { vista.innerHTML = '<div class="card vacio">Aucun ticket pour l’instant.</div>'; return; }
   ticketVu = t.id;
   const n = (k) => t.lignes.filter((l) => l.etat === k).length;
-  const lignes = t.lignes.map((l, i) => {
-    let que = '', acc = '';
-    if (l.etat === 'sur') {
-      que = `<span class="badge good">Reconnu</span> ${esc(l.nom)}`;
-      acc = boton('achat', 'Ajouter l’achat', 'primary') + boton('non', 'Pas ça', 'ghost');
-    } else if (l.etat === 'probable') {
-      que = `<span class="badge warn">À confirmer</span> Peut-être : <strong>${esc(l.nom)}</strong> (${l.score} %)`;
-      acc = boton('oui', 'Oui, c’est ça', 'primary') + boton('non', 'Non', 'ghost');
-    } else if (l.etat === 'aucun') {
-      que = '<span class="badge bad">Inconnu</span> Pas encore dans le catalogue';
-      acc = boton('scanner', 'Scanner ce produit', 'primary') + boton('sugerir', 'Chercher par le nom', 'secondary') + boton('ignorer', 'Ignorer', 'ghost');
-      que += pintarSugerencias(l);
-    } else if (l.etat === 'achat') {
-      que = `<span class="badge good">✓ Achat ajouté</span> ${esc(l.nom)}`;
-    } else {
-      que = 'Ignorée (pas un produit emballé)';
-      acc = boton('retablir', 'Rétablir', 'ghost');
-    }
-    const clase = l.etat === 'achat' ? 'hecha' : l.etat === 'ignore' ? 'ignoree' : '';
-    // Libellé modifiable tant que l'achat n'est pas ajouté : corrige une erreur de lecture avant qu'elle soit apprise.
-    const lib = l.etat === 'achat'
-      ? `<span class="lib">${esc(l.libelle)}</span>`
-      : `<input class="lib lib-edit" data-li="${i}" value="${esc(l.libelle)}" aria-label="Libellé lu sur le ticket (modifiable)" spellcheck="false">`;
-    return `<div class="linea ${clase}" data-i="${i}"><div class="cab">${lib}
-      <span class="prix">${l.qte > 1 ? `${l.qte} × ` : ''}${euros(l.prix)}</span></div>
-      <div class="que">${que}</div>${acc ? `<div class="actions">${acc}</div>` : ''}</div>`;
+  const reste = n('probable') + n('aucun') + n('sur');
+  const fait = t.lignes.length - reste;
+  const grupos = GRUPOS.map((g) => {
+    const filas = t.lignes.map((l, i) => (l.etat === g.etat ? pintarLinea(l, i) : '')).join('');
+    if (!filas) return '';
+    return `<details class="card grupo" data-g="${g.etat}" ${gruposAbiertos.has(g.etat) ? 'open' : ''}>
+      <summary><strong>${g.titre}</strong> <span class="pill">${n(g.etat)}</span></summary>${filas}</details>`;
   }).join('');
   const anteriores = db.tickets.length > 1
     ? `<label class="field">Autres tickets<select id="ticket-otro">${db.tickets.map((x) => `<option value="${x.id}"${x.id === t.id ? ' selected' : ''}>${esc(fechaCorta(x.date))} · ${esc(x.enseigne || '?')} · ${x.lignes.length} articles</option>`).join('')}</select></label>` : '';
+  const lu = t.source !== 'pdf-texte';
   vista.innerHTML = `
     <div class="card">
-      <h3>Ticket du ${esc(fechaCorta(t.date))}</h3>
-      <div class="grid">
-        <label class="field">Date d'achat<input type="date" data-tk="date" value="${esc(t.date)}"></label>
-        <label class="field">Enseigne<input data-tk="enseigne" list="enseignes" value="${esc(t.enseigne)}"></label>
-        <label class="field">Commune<input data-tk="commune" list="communes" value="${esc(t.commune)}"></label>
-      </div>
-      ${t.source === 'pdf-texte' ? '' : '<p class="note"><strong>Vérifiez la date et l’enseigne</strong> : lues sur une image, elles peuvent contenir une erreur (un 7 lu comme un 1, par exemple).</p>'}
-      ${controlTotal(t)}
-      <p class="note">${t.lignes.length} articles · ${n('sur')} reconnus · ${n('probable')} à confirmer · ${n('aucun')} à scanner · ${n('achat')} achats ajoutés · ${n('ignore')} ignorés</p>
-      ${n('sur') ? `<div class="actions">${boton('todos', `Ajouter les ${n('sur')} achats reconnus`, 'primary')}</div>` : ''}
-      ${anteriores}
+      <h3>${esc(t.enseigne || 'Magasin ?')} · ${esc(fechaCorta(t.date))}</h3>
+      <p class="note">${t.lignes.length} articles${t.total != null ? ` · ${euros(t.total)}` : ''} · ${reste ? `${reste} à traiter` : 'tout est traité'}</p>
+      <div class="bar avance"><div style="flex:${fait};background:var(--good)"></div><div style="flex:${reste}"></div></div>
+      ${n('sur') ? boton('todos', n('sur') === 1 ? 'Ajouter l’achat reconnu' : `Ajouter les ${n('sur')} achats reconnus`, 'primary grande wide') : ''}
+      <details class="mini">
+        <summary>${lu ? 'Vérifier la date et le magasin (lus sur une image)' : 'Modifier la date et le magasin'}</summary>
+        <div class="grid">
+          <label class="field">Date d'achat<input type="date" data-tk="date" value="${esc(t.date)}"></label>
+          <label class="field">Enseigne<input data-tk="enseigne" list="enseignes" value="${esc(t.enseigne)}"></label>
+          <label class="field">Commune<input data-tk="commune" list="communes" value="${esc(t.commune)}"></label>
+        </div>
+      </details>
+      ${/pend-sync/.test(controlTotal(t)) ? controlTotal(t) : ''}
     </div>
-    <div class="card">${lignes}</div>`;
+    ${grupos}
+    <div class="card">
+      ${anteriores}
+      ${boton('supprimer-ticket', 'Supprimer ce ticket', 'ghost danger wide')}
+    </div>`;
 }
 
 $('#ticket-vista').addEventListener('change', (e) => {
@@ -1141,7 +1163,22 @@ $('#ticket-vista').addEventListener('click', async (e) => {
     pintarTicket();
     return;
   }
-  const i = Number(b.closest('.linea').dataset.i), l = t.lignes[i];
+  if (b.dataset.a === 'supprimer-ticket') {
+    const faits = t.lignes.filter((l) => l.etat === 'achat').length;
+    const msg = `Supprimer le ticket ${t.enseigne || ''} du ${fechaCorta(t.date)} de ce téléphone ?`
+      + (faits ? `
+${faits === 1 ? 'L’achat déjà ajouté reste enregistré' : `Les ${faits} achats déjà ajoutés restent enregistrés`}.` : '');
+    if (!confirm(msg)) return;
+    if (db.prefs.enlace?.ticket === t.id) cerrarEnlace();
+    db.tickets = db.tickets.filter((x) => x.id !== t.id);
+    ticketVu = db.tickets[0]?.id || null;
+    guardar();
+    estadoTicket('');
+    toast('Ticket supprimé');
+    pintarTicket();
+    return;
+  }
+  const i = Number(b.closest('[data-i]').dataset.i), l = t.lignes[i];
   if (b.dataset.a === 'achat' || b.dataset.a === 'oui') {
     if (await agregarCompra(t, i)) { toast(`Achat ajouté : ${l.nom}`); sincronizar([l.gtin]); }
   } else if (b.dataset.a === 'non' || b.dataset.a === 'retablir') {
@@ -1163,6 +1200,12 @@ $('#ticket-vista').addEventListener('click', async (e) => {
   guardar();
   pintarTicket();
 });
+
+// Mémoriser les groupes ouverts ('toggle' ne remonte pas : capture).
+$('#ticket-vista').addEventListener('toggle', (e) => {
+  const g = e.target.dataset?.g;
+  if (g) e.target.open ? gruposAbiertos.add(g) : gruposAbiertos.delete(g);
+}, true);
 
 // Ligne inconnue : suggestions Open Food Facts d'après le libellé (via le script, avec la clé de l'équipe).
 // Rien n'est attribué automatiquement : un libellé abrégé correspond souvent à plusieurs variantes.
