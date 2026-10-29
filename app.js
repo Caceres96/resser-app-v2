@@ -2,7 +2,7 @@ import {
   CATEGORIAS, ALIAS_CATEGORIAS, COMMUNES, ENSEIGNES, BASES, FAMILIAS, MATERIALES, FORMAS, PESO_FUENTES, EXACTITUD,
   CAUSAS, ESTADOS_OFF, familiaDe, labelDe, labelMaterial, labelForma, consignaTri, FUENTE_TRI,
 } from './reglas.js';
-import { lireTicket, apparier, ajouterLibelle, libellesDe, detecterDate, detecterEnseigne } from './ticket.js';
+import { lireTicket, lireTicketPdf, apparier, ajouterLibelle, libellesDe, detecterDate, detecterEnseigne } from './ticket.js';
 
 const APP_VERSION = '1.0.0-beta';
 // Version bêta : stockage séparé de l'application stable (même origine github.io, autre clé),
@@ -865,28 +865,22 @@ async function cargarCatalogo(forcer = false) {
 
 const estadoTicket = (m) => { $('#ticket-estado').textContent = m || ''; };
 
-$('#ticket-foto').addEventListener('change', async (e) => {
-  const f = e.target.files[0];
-  e.target.value = '';
-  if (!f) return;
+// lector(onProgress) → { brut, articles, source } ; même traitement pour une photo ou un PDF.
+async function procesarTicket(lector, mensaje, sinArticulos) {
   $('#ticket-progreso').hidden = false;
   $('#ticket-barra').style.flex = '0';
-  estadoTicket('Lecture du ticket… La première fois, le moteur de lecture et le français se téléchargent (≈ 15 Mo).');
+  estadoTicket(mensaje);
   try {
-    const img = await createImageBitmap(f);
-    const [{ brut, articles }, cat] = await Promise.all([
-      lireTicket(img, (v) => { $('#ticket-barra').style.flex = String(v); }),
+    const [{ brut, articles, source }, cat] = await Promise.all([
+      lector((v) => { $('#ticket-barra').style.flex = String(v); }),
       cargarCatalogo(true),
     ]);
-    img.close?.();
-    if (!articles.length) {
-      estadoTicket('Aucune ligne d’article lue. Reprenez la photo : ticket à plat, bien éclairé, sans reflet, en entier.');
-      return;
-    }
+    if (!articles.length) { estadoTicket(sinArticulos); return; }
     const ctx = db.prefs.contexto || {};
     const ticket = {
       id: `T${Date.now().toString(36).toUpperCase()}`,
       creado: ahora(),
+      source,
       date: detecterDate(brut) || ctx.fecha || hoy(),
       enseigne: detecterEnseigne(brut, ENSEIGNES) || ctx.enseigne || '',
       commune: ctx.commune || '',
@@ -901,14 +895,35 @@ $('#ticket-foto').addEventListener('change', async (e) => {
     ticketVu = ticket.id;
     guardar();
     const n = (k) => ticket.lignes.filter((l) => l.etat === k).length;
-    estadoTicket(`${ticket.lignes.length} articles lus : ${n('sur')} reconnus, ${n('probable')} à confirmer, ${n('aucun')} à scanner.`
+    const origen = { 'pdf-texte': ' (PDF lu directement)', 'pdf-ocr': ' (PDF scanné, lu par OCR)' }[source] || '';
+    estadoTicket(`${ticket.lignes.length} articles lus${origen} : ${n('sur')} reconnus, ${n('probable')} à confirmer, ${n('aucun')} à scanner.`
       + (cat.equipe ? '' : ' Catalogue de l’équipe indisponible : seuls les produits de ce téléphone sont reconnus.'));
     pintarTicket();
   } catch (err) {
-    estadoTicket(`Lecture impossible : ${err.message || err}`);
+    const motDePasse = /password/i.test(String(err?.name) + String(err?.message));
+    estadoTicket(motDePasse ? 'Ce PDF est protégé par un mot de passe : impossible de le lire.' : `Lecture impossible : ${err.message || err}`);
   } finally {
     $('#ticket-progreso').hidden = true;
   }
+}
+
+$('#ticket-foto').addEventListener('change', (e) => {
+  const f = e.target.files[0];
+  e.target.value = '';
+  if (!f) return;
+  procesarTicket(async (p) => {
+    const img = await createImageBitmap(f);
+    try { return await lireTicket(img, p); } finally { img.close?.(); }
+  }, 'Lecture du ticket… La première fois, le moteur de lecture et le français se téléchargent (≈ 15 Mo).',
+  'Aucune ligne d’article lue. Reprenez la photo : ticket à plat, bien éclairé, sans reflet, en entier.');
+});
+
+$('#ticket-pdf').addEventListener('change', (e) => {
+  const f = e.target.files[0];
+  e.target.value = '';
+  if (!f) return;
+  procesarTicket((p) => lireTicketPdf(f, p), 'Lecture du ticket PDF…',
+    'Aucune ligne d’article trouvée dans ce PDF. Est-ce bien un ticket de caisse ?');
 });
 
 let ticketVu = null;
@@ -953,6 +968,7 @@ function pintarTicket() {
         <label class="field">Enseigne<input data-tk="enseigne" list="enseignes" value="${esc(t.enseigne)}"></label>
         <label class="field">Commune<input data-tk="commune" list="communes" value="${esc(t.commune)}"></label>
       </div>
+      ${t.source === 'pdf-texte' ? '' : '<p class="note"><strong>Vérifiez la date et l’enseigne</strong> : lues sur une image, elles peuvent contenir une erreur (un 7 lu comme un 1, par exemple).</p>'}
       <p class="note">${t.lignes.length} articles · ${n('sur')} reconnus · ${n('probable')} à confirmer · ${n('aucun')} à scanner · ${n('achat')} achats ajoutés · ${n('ignore')} ignorés</p>
       ${n('sur') ? `<div class="actions">${boton('todos', `Ajouter les ${n('sur')} achats reconnus`, 'primary')}</div>` : ''}
       ${anteriores}

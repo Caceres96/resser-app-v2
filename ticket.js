@@ -162,6 +162,61 @@ function binariser(p, w, h) {
   }
 }
 
+// ---------- Tickets en PDF (tickets dématérialisés envoyés par l'enseigne) ----------
+
+const PDFJS = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@6.4.299/build/pdf.min.mjs';
+const PDFJS_WORKER = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@6.4.299/build/pdf.worker.min.mjs';
+let pdfjs = null;
+async function chargerPdfjs() {
+  if (!pdfjs) {
+    pdfjs = await import(PDFJS);
+    pdfjs.GlobalWorkerOptions.workerSrc = PDFJS_WORKER;
+  }
+  return pdfjs;
+}
+
+// Regroupe les morceaux de texte d'une page en lignes (même ordonnée), lus de gauche à droite.
+function lignesDePage(items) {
+  const groupes = [];
+  for (const it of items) {
+    if (!it.str || !it.str.trim()) continue;
+    const x = it.transform[4], y = it.transform[5], h = Math.abs(it.transform[3]) || it.height || 8;
+    let g = groupes.find((v) => Math.abs(v.y - y) <= h * 0.5);
+    if (!g) { g = { y, morceaux: [] }; groupes.push(g); }
+    g.morceaux.push({ x, s: it.str });
+  }
+  return groupes.sort((a, b) => b.y - a.y)
+    .map((g) => g.morceaux.sort((a, b) => a.x - b.x).map((m) => m.s).join(' ').replace(/\s+/g, ' ').trim())
+    .filter(Boolean);
+}
+
+// PDF avec texte : lecture directe, exacte. PDF scanné (image seule) : chaque page est lue par OCR.
+export async function lireTicketPdf(fichier, onProgress) {
+  const lib = await chargerPdfjs();
+  const doc = await lib.getDocument({ data: new Uint8Array(await fichier.arrayBuffer()) }).promise;
+  const pages = Math.min(doc.numPages, 10);
+  let brut = [];
+  for (let n = 1; n <= pages; n++) {
+    const page = await doc.getPage(n);
+    brut.push(...lignesDePage((await page.getTextContent()).items));
+  }
+  let articles = brut.map(analyserLigne).filter(Boolean);
+  if (articles.length) { if (onProgress) onProgress(1); return { brut, articles, source: 'pdf-texte' }; }
+  brut = []; articles = [];
+  for (let n = 1; n <= pages; n++) {
+    const page = await doc.getPage(n);
+    const vp = page.getViewport({ scale: 2.5 });
+    const c = document.createElement('canvas');
+    c.width = Math.ceil(vp.width); c.height = Math.ceil(vp.height);
+    const x = c.getContext('2d');
+    x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height);
+    await page.render({ canvas: c, canvasContext: x, viewport: vp }).promise;
+    const r = await lireTicket(c, (v) => onProgress && onProgress((n - 1 + v) / pages));
+    brut.push(...r.brut); articles.push(...r.articles);
+  }
+  return { brut, articles, source: 'pdf-ocr' };
+}
+
 // Deux passages : gris, puis binarisé si moins de 8 lignes article ont été trouvées.
 export async function lireTicket(source, onProgress) {
   let meilleur = { brut: [], articles: [] };
@@ -171,5 +226,5 @@ export async function lireTicket(source, onProgress) {
     if (articles.length > meilleur.articles.length) meilleur = { brut, articles };
     if (mode === 'gris' && articles.length >= 8) break;
   }
-  return meilleur;
+  return { ...meilleur, source: 'photo' };
 }

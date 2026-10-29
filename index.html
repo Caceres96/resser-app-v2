@@ -74,8 +74,9 @@
     <section id="tab-ticket" class="tab">
       <div class="card">
         <h3>Lire un ticket de caisse</h3>
-        <p class="note">Photographiez le ticket à plat, bien éclairé, en entier. La lecture se fait sur le téléphone ; la photo n'est pas conservée, seules les lignes d'articles le sont.</p>
+        <p class="note">Photographiez le ticket à plat, bien éclairé, en entier, ou importez le ticket PDF envoyé par l'enseigne (e-mail, appli fidélité). La lecture se fait sur le téléphone ; ni la photo ni le PDF ne sont conservés, seules les lignes d'articles le sont.</p>
         <label class="button primary wide">Photographier le ticket<input id="ticket-foto" type="file" accept="image/*" capture="environment" hidden></label>
+        <label class="button secondary wide">Importer un ticket PDF<input id="ticket-pdf" type="file" accept="application/pdf,.pdf" hidden></label>
         <div class="barra-ticket" id="ticket-progreso" hidden><div class="bar"><div id="ticket-barra" style="flex:0;background:var(--accent)"></div><div style="flex:1"></div></div></div>
         <p id="ticket-estado" class="muted" role="status"></p>
       </div>

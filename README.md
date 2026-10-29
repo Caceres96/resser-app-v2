@@ -7,7 +7,7 @@ Version bêta de l'application Resser (Test A, étude de faisabilité Grand Nanc
 
 ## Ce qui change par rapport à la version stable
 
-**Onglet « Ticket »** : photo du ticket → lecture locale (Tesseract.js, français) → une carte par article :
+**Onglet « Ticket »** : photo du ticket, ou ticket PDF envoyé par l'enseigne → lecture locale → une carte par article. Un PDF avec texte est lu directement (pdf.js, exact) ; un PDF scanné ou une photo passe par l'OCR (Tesseract.js, français), et la date et l'enseigne détectées sont alors à vérifier.
 
 - **Reconnu** (libellé déjà appris) → « Ajouter l'achat » : la fiche du produit est reprise telle quelle, avec la date et l'enseigne du ticket, et un achat est ajouté au Journal.
 - **À confirmer** (nom proche) → « Oui, c'est ça » ajoute l'achat et mémorise le libellé.

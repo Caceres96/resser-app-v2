@@ -7,7 +7,7 @@
 const PREFIXE = 'resser-v2-';
 const CACHE = `${PREFIXE}1`;
 const SHELL = ['./', 'index.html', 'styles.css', 'app.js', 'reglas.js', 'ticket.js', 'manifest.webmanifest', 'icon.svg'];
-const CDN = /^https:\/\/(cdn|fastly)\.jsdelivr\.net\/npm\/(barcode-detector|zxing-wasm|tesseract\.js|tesseract\.js-core|@tesseract\.js-data)@/;
+const CDN = /^https:\/\/(cdn|fastly)\.jsdelivr\.net\/npm\/(barcode-detector|zxing-wasm|tesseract\.js|tesseract\.js-core|@tesseract\.js-data\/fra|pdfjs-dist)@/;
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).catch(() => {}));
