@@ -42,6 +42,14 @@
 .linea .que { font-size: 13px; margin: 6px 0; }
 .linea .actions { margin-top: 6px; }
 .linea .actions button { padding: 6px 10px; font-size: 13px; }
+.sugs { margin-top: 8px; display: grid; gap: 6px; }
+.sug { display: flex; gap: 8px; align-items: center; border: 1px solid var(--line); border-radius: 8px; padding: 6px; }
+.sug img, .sug .sin-img { width: 44px; height: 44px; object-fit: contain; background: #fff; border-radius: 6px; flex: none; }
+.sug .sug-txt { flex: 1; min-width: 0; display: flex; flex-direction: column; font-size: 13px; }
+.sug .sug-txt strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sug .sug-txt span { color: var(--muted); font-size: 12px; }
+.sug .gtin { font-family: ui-monospace, Consolas, monospace; }
+.sug button { padding: 6px 8px; font-size: 12px; flex: none; }
 .linea.hecha { opacity: .7; }
 .linea.ignoree { opacity: .45; }
 .enlace { border-left: 4px solid #d85a30; border-radius: 0; background: var(--soft); padding: 10px; margin-bottom: 14px; display: flex; gap: 10px; align-items: center; justify-content: space-between; }

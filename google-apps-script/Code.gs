@@ -358,6 +358,29 @@ function doGet(e) {
   const ss = classeur_();
   // Maintenance : ?cle=…&accion=configurer recrée Synthèse et Dictionnaire (données intactes).
   if (p.accion === 'configurer') { configurer(); return json_({ ok: true, configure: true }); }
+  // Suggestions Open Food Facts pour un libellé de ticket (?accion=buscar&q=…). Le moteur de recherche
+  // d'Open Food Facts n'accepte pas les appels directs du navigateur : le script sert de relais.
+  // Résultats gardés 6 h en cache pour ménager l'API (un même libellé revient souvent).
+  if (p.accion === 'buscar') {
+    const q = String(p.q || '').replace(/\s+/g, ' ').trim().slice(0, 120);
+    if (!q) return json_({ ok: true, produits: [] });
+    const cache = CacheService.getScriptCache(), cleCache = `off:${q.toLowerCase()}`;
+    const enCache = cache.get(cleCache);
+    if (enCache) return json_({ ok: true, produits: JSON.parse(enCache) });
+    const url = 'https://search.openfoodfacts.org/search?' + [
+      `q=${encodeURIComponent(q)}`, 'page_size=5', 'langs=fr',
+      `fields=${encodeURIComponent('code,product_name,product_name_fr,brands,quantity,image_front_small_url')}`,
+    ].join('&');
+    const rep = UrlFetchApp.fetch(url, { muteHttpExceptions: true, headers: { 'User-Agent': 'Resser/1.0 (etude de faisabilite emballages, Grand Nancy)' } });
+    if (rep.getResponseCode() !== 200) return json_({ ok: false, erreur: `Open Food Facts a répondu ${rep.getResponseCode()}` });
+    const produits = (JSON.parse(rep.getContentText()).hits || []).filter((h) => h.code).map((h) => ({
+      code: String(h.code), nom: h.product_name_fr || h.product_name || '',
+      marque: Array.isArray(h.brands) ? h.brands.join(', ') : (h.brands || ''),
+      quantite: h.quantity || '', image: h.image_front_small_url || '',
+    }));
+    cache.put(cleCache, JSON.stringify(produits), 21600);
+    return json_({ ok: true, produits });
+  }
   // Catalogue léger (sans photos ni fiches complètes) : sert à rapprocher les libellés de ticket.
   if (p.accion === 'lista') {
     const shR = ss.getSheetByName(ONGLETS.ref);

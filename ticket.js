@@ -62,6 +62,16 @@ export function ajouterLibelle(texte, nouveau) {
   return liste.join(' | ');
 }
 
+// Libellé de ticket → requête de recherche : abréviations de marque d'enseigne développées,
+// lettres isolées (« … SEL C ») retirées. Les mots tronqués sont gardés : le moteur cherche par préfixe.
+const ABREVIATIONS = { auc: 'auchan', auch: 'auchan', crf: 'carrefour', carf: 'carrefour', mdd: '', ppa: 'plein air', bio: 'bio' };
+export function requeteRecherche(libelle) {
+  return normaliser(libelle).split(' ')
+    .map((m) => (m in ABREVIATIONS ? ABREVIATIONS[m] : m))
+    .filter((m) => m && (m.length > 1 || /\d/.test(m)))
+    .join(' ');
+}
+
 export const SEUIL_SUR = 0.82;
 export const SEUIL_PROBABLE = 0.6;
 // catalogue : [{ gtin, nom, marque, libelle }]. « sûr » seulement via un libellé déjà appris.

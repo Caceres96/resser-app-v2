@@ -2,7 +2,7 @@ import {
   CATEGORIAS, ALIAS_CATEGORIAS, COMMUNES, ENSEIGNES, BASES, FAMILIAS, MATERIALES, FORMAS, PESO_FUENTES, EXACTITUD,
   CAUSAS, ESTADOS_OFF, familiaDe, labelDe, labelMaterial, labelForma, consignaTri, FUENTE_TRI,
 } from './reglas.js';
-import { lireTicket, lireTicketPdf, apparier, ajouterLibelle, libellesDe, detecterDate, detecterEnseigne, detecterTotal } from './ticket.js';
+import { lireTicket, lireTicketPdf, apparier, ajouterLibelle, libellesDe, detecterDate, detecterEnseigne, detecterTotal, requeteRecherche } from './ticket.js';
 
 const APP_VERSION = '1.0.0-beta';
 // Version bêta : stockage séparé de l'application stable (même origine github.io, autre clé),
@@ -591,6 +591,9 @@ function abrirEditor(r, origen = 'scan') {
     actual.libelle_ticket = ajouterLibelle(actual.libelle_ticket, e.libelle);
     if (e.ticket.date) actual.date_achat = e.ticket.date;
     if (e.ticket.enseigne) actual.enseigne = e.ticket.enseigne;
+    // Produit choisi parmi les suggestions par nom : la variante et l'emballage restent à confirmer.
+    const NOTE_NOM = 'Produit choisi d’après le libellé du ticket (suggestion Open Food Facts) : vérifier la variante et l’emballage.';
+    if (e.viaNom && !String(actual.obs || '').includes(NOTE_NOM)) actual.obs = [actual.obs, NOTE_NOM].filter(Boolean).join(' ');
   }
   pintarEditor();
   $('#editor').scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -956,7 +959,8 @@ function pintarTicket() {
       acc = boton('oui', 'Oui, c’est ça', 'primary') + boton('non', 'Non', 'ghost');
     } else if (l.etat === 'aucun') {
       que = '<span class="badge bad">Inconnu</span> Pas encore dans le catalogue';
-      acc = boton('scanner', 'Scanner ce produit', 'primary') + boton('ignorer', 'Ignorer', 'ghost');
+      acc = boton('scanner', 'Scanner ce produit', 'primary') + boton('sugerir', 'Chercher par le nom', 'secondary') + boton('ignorer', 'Ignorer', 'ghost');
+      que += pintarSugerencias(l);
     } else if (l.etat === 'achat') {
       que = `<span class="badge good">✓ Achat ajouté</span> ${esc(l.nom)}`;
     } else {
@@ -1033,10 +1037,49 @@ $('#ticket-vista').addEventListener('click', async (e) => {
   } else if (b.dataset.a === 'scanner') {
     abrirEnlace(t, i);
     return;
+  } else if (b.dataset.a === 'sugerir') {
+    await buscarSugerencias(t, i);
+    return;
+  } else if (b.dataset.a === 'elegir') {
+    // Comme un scan du code-barres choisi : fiche pré-remplie (équipe ou Open Facts), libellé appris à l'enregistrement.
+    abrirEnlace(t, i, { viaNom: true });
+    buscar(b.dataset.code);
+    return;
   }
   guardar();
   pintarTicket();
 });
+
+// Ligne inconnue : suggestions Open Food Facts d'après le libellé (via le script, avec la clé de l'équipe).
+// Rien n'est attribué automatiquement : un libellé abrégé correspond souvent à plusieurs variantes.
+async function buscarSugerencias(t, i) {
+  const l = t.lignes[i];
+  if (!conectado()) { toast('Saisissez la clé de l’équipe dans « Contexte d’achat » pour chercher par le nom.'); return; }
+  const q = requeteRecherche(l.libelle);
+  l.sugerencias = { estado: 'cargando', q, produits: [] };
+  pintarTicket();
+  try {
+    const j = await (await fetch(`${FEUILLE.url}?cle=${encodeURIComponent(FEUILLE.cle)}&accion=buscar&q=${encodeURIComponent(q)}`)).json();
+    if (!j.ok || !Array.isArray(j.produits)) throw new Error(j.erreur || 'recherche indisponible');
+    l.sugerencias = { estado: 'ok', q, produits: j.produits.slice(0, 3) };
+  } catch (err) {
+    l.sugerencias = { estado: 'error', q, produits: [], erreur: String(err.message || err) };
+  }
+  guardar();
+  pintarTicket();
+}
+
+function pintarSugerencias(l) {
+  const s = l.sugerencias;
+  if (!s) return '';
+  if (s.estado === 'cargando') return `<div class="note">Recherche « ${esc(s.q)} » dans Open Food Facts…</div>`;
+  if (s.estado === 'error') return `<div class="note pend-sync">Recherche impossible (${esc(s.erreur)}). Scannez le produit.</div>`;
+  if (!s.produits.length) return `<div class="note">Aucun produit trouvé pour « ${esc(s.q)} ». Scannez le produit.</div>`;
+  return `<div class="sugs"><div class="note">Est-ce l’un de ces produits ? Vérifiez la variante et le format : l’emballage en dépend.</div>${s.produits.map((p) => `
+    <div class="sug">${p.image ? `<img src="${esc(p.image)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : '<span class="sin-img"></span>'}
+      <div class="sug-txt"><strong>${esc(p.nom || 'Sans nom')}</strong><span>${esc([p.marque, p.quantite].filter(Boolean).join(' · '))}</span><span class="gtin">${esc(p.code)}</span></div>
+      <button type="button" class="secondary" data-a="elegir" data-code="${esc(p.code)}">C’est celui-ci</button></div>`).join('')}</div>`;
+}
 
 // Achat d'un produit déjà caractérisé : sa fiche est reprise telle quelle, avec la date et le
 // magasin du ticket ; le libellé confirmé est mémorisé pour reconnaître les prochains tickets.
@@ -1088,8 +1131,8 @@ function pintarEnlace() {
   $('#enlace').hidden = !e;
   if (e) $('#enlace-libelle').textContent = e.libelle;
 }
-function abrirEnlace(t, i) {
-  db.prefs.enlace = { ticket: t.id, i };
+function abrirEnlace(t, i, extra = {}) {
+  db.prefs.enlace = { ticket: t.id, i, ...extra };
   guardar();
   mostrarTab('escanear');
   pintarEnlace();
