@@ -80,24 +80,64 @@ export function apparier(libelle, catalogue) {
 
 const IGNORER = /\b(total|tva|carte|cb|especes?|monnaie|rendu|siret|merci|ticket|articles?|remise|fidelite|cagnotte|avoir|caisse|magasin|tel|www|date|heure|net|payer|paiement|visa|mastercard|contact|sous)\b/i;
 export function analyserLigne(brut) {
-  const t = String(brut || '').replace(/\s+/g, ' ').trim();
+  // Un zéro lu comme une lettre devant les centimes (« e,00 », « O,99 ») redevient un chiffre.
+  const t = String(brut || '').replace(/\s+/g, ' ').trim().replace(/(^|\s)[oOeD](?=[.,]\d{2}(?!\d))/g, '$10');
   if (t.length < 4 || !/[a-zA-Z]{3}/.test(t) || IGNORER.test(t)) return null;
   // Dernier prix de la ligne (l'OCR ajoute parfois du bruit après : « 8,82 Bit », « 6,41 E »).
   const prix = [...t.matchAll(/(\d{1,3}[.,]\d{2})(?!\d)/g)].at(-1);
   if (!prix) return null; // une ligne article porte un prix
+  if (/-\s*$/.test(t.slice(0, prix.index))) return null; // montant négatif : ligne de remise
   let libelle = t.slice(0, prix.index);
   let qte = 1;
-  const q = libelle.match(/^\s*(\d{1,2})\s*[xX*]\s+/);
+  // Quantité en tête (« 2 x YAOURT ») ou avant le prix total (« HEINZ … 2*2,84 5,68 » ; l'OCR lit parfois * comme +).
+  const q = libelle.match(/^\s*(\d{1,2})\s*[xX*×]\s+/);
   if (q) { qte = Number(q[1]); libelle = libelle.slice(q[0].length); }
-  libelle = libelle.replace(/^[\d\s\-.*#“”"'‘’]+/, '').replace(/[|_~=]+/g, ' ').replace(/\s+/g, ' ').trim();
+  const q2 = libelle.match(/\s(\d{1,2})\s*[xX*×+]\s*\d{1,3}[.,]\d{2}\s*$/);
+  if (q2) { qte = Number(q2[1]); libelle = libelle.slice(0, q2.index); }
+  libelle = libelle.replace(/^[\d\s\-.*#“”"'‘’]+/, '').replace(/[|_~=]+/g, ' ')
+    .replace(/\s+\d+[.,]\d{2}\s*$/, '') // prix unitaire mal lu restant en fin de libellé (« 191,13 »)
+    .replace(/\s+\d{1,2}\s*[xX*×+]\s*$/, '') // quantité orpheline (« 1* »)
+    .replace(/[\s.]+$/, '') // libellés tronqués par la caisse : « AUCHAN BIO BOISSO.. »
+    .replace(/\s+/g, ' ').trim();
   if (libelle.replace(/[^a-zA-Z]/g, '').length < 3) return null;
   return { libelle, prix: Number(prix[1].replace(',', '.')), qte };
 }
 
+// Les articles s'arrêtent au premier total, avant les lignes de fidélité, de TVA et de paiement.
+// La section « Articles avec remise » (Auchan) contient d'autres achats, au prix remisé : elle est lue,
+// seules ses lignes de remise (montants négatifs) sont écartées par analyserLigne.
+const FIN_ARTICLES = /(total remises?|\btotal\b|sous[- ]?total|montant total|net a payer|\ba payer\b|^\s*\d+\s+articles?\b)/i;
+export function extraireArticles(lignes) {
+  const articles = [];
+  for (const l of lignes) {
+    if (articles.length && FIN_ARTICLES.test(normaliser(l))) break;
+    const a = analyserLigne(l);
+    if (a) articles.push(a);
+  }
+  return articles;
+}
+
+// Total payé (« Total 83,04 € », « TOTAL A PAYER 22,85 ») : sert à contrôler la lecture des articles.
+export function detecterTotal(lignes) {
+  for (const l of lignes) {
+    const t = normaliser(l);
+    if (!/^(total|montant total|net a payer)\b/.test(t) || /remise|tva|euros|eligible|paiement/.test(t)) continue;
+    const p = [...l.matchAll(/(\d{1,4}[.,]\d{2})(?!\d)/g)].at(-1);
+    if (p) return Number(p[1].replace(',', '.'));
+  }
+  return null;
+}
+
 // Date du ticket (jj/mm/aa ou jj/mm/aaaa) → « aaaa-mm-jj », si elle est plausible.
+const MOIS = ['janvier', 'fevrier', 'mars', 'avril', 'mai', 'juin', 'juillet', 'aout', 'septembre', 'octobre', 'novembre', 'decembre'];
 export function detecterDate(lignes) {
   for (const l of lignes) {
-    const m = l.match(/\b(\d{2})[/.-](\d{2})[/.-](\d{2}|\d{4})\b/);
+    // « Le 18 octobre 2026 à 11:58 » (Auchan…) ou « 27/10/2026 », « 27.10.26 ».
+    const t = normaliser(l);
+    const enLettres = t.match(new RegExp(`\\b(\\d{1,2}) (${MOIS.join('|')}) (\\d{4})\\b`));
+    const m = enLettres
+      ? [null, enLettres[1], String(MOIS.indexOf(enLettres[2]) + 1), enLettres[3]]
+      : l.match(/\b(\d{2})[/.-](\d{2})[/.-](\d{2}|\d{4})\b/);
     if (!m) continue;
     const j = Number(m[1]), mo = Number(m[2]), a = m[3].length === 2 ? 2000 + Number(m[3]) : Number(m[3]);
     const d = new Date(a, mo - 1, j);
@@ -200,7 +240,7 @@ export async function lireTicketPdf(fichier, onProgress) {
     const page = await doc.getPage(n);
     brut.push(...lignesDePage((await page.getTextContent()).items));
   }
-  let articles = brut.map(analyserLigne).filter(Boolean);
+  let articles = extraireArticles(brut);
   if (articles.length) { if (onProgress) onProgress(1); return { brut, articles, source: 'pdf-texte' }; }
   brut = []; articles = [];
   for (let n = 1; n <= pages; n++) {
@@ -222,7 +262,7 @@ export async function lireTicket(source, onProgress) {
   let meilleur = { brut: [], articles: [] };
   for (const mode of ['gris', 'binaire']) {
     const brut = await ocr(preparer(source, mode), (v) => onProgress && onProgress((mode === 'gris' ? 0 : 0.5) + v / 2));
-    const articles = brut.map(analyserLigne).filter(Boolean);
+    const articles = extraireArticles(brut);
     if (articles.length > meilleur.articles.length) meilleur = { brut, articles };
     if (mode === 'gris' && articles.length >= 8) break;
   }

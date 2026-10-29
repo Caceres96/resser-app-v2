@@ -2,7 +2,7 @@ import {
   CATEGORIAS, ALIAS_CATEGORIAS, COMMUNES, ENSEIGNES, BASES, FAMILIAS, MATERIALES, FORMAS, PESO_FUENTES, EXACTITUD,
   CAUSAS, ESTADOS_OFF, familiaDe, labelDe, labelMaterial, labelForma, consignaTri, FUENTE_TRI,
 } from './reglas.js';
-import { lireTicket, lireTicketPdf, apparier, ajouterLibelle, libellesDe, detecterDate, detecterEnseigne } from './ticket.js';
+import { lireTicket, lireTicketPdf, apparier, ajouterLibelle, libellesDe, detecterDate, detecterEnseigne, detecterTotal } from './ticket.js';
 
 const APP_VERSION = '1.0.0-beta';
 // Version bêta : stockage séparé de l'application stable (même origine github.io, autre clé),
@@ -884,6 +884,7 @@ async function procesarTicket(lector, mensaje, sinArticulos) {
       date: detecterDate(brut) || ctx.fecha || hoy(),
       enseigne: detecterEnseigne(brut, ENSEIGNES) || ctx.enseigne || '',
       commune: ctx.commune || '',
+      total: detecterTotal(brut),
       lignes: articles.map((a) => {
         const r = apparier(a.libelle, cat.liste);
         const top = r.niveau === 'aucun' ? null : r.cands[0];
@@ -927,6 +928,15 @@ $('#ticket-foto').addEventListener('change', leerArchivoTicket);
 $('#ticket-archivo').addEventListener('change', leerArchivoTicket);
 
 let ticketVu = null;
+// Somme des articles lus comparée au total imprimé : un écart signale une ligne mal lue ou oubliée.
+function controlTotal(t) {
+  if (t.total == null) return '';
+  const somme = t.lignes.reduce((s, l) => s + (l.prix || 0), 0);
+  const ecart = Math.round((t.total - somme) * 100) / 100;
+  return Math.abs(ecart) < 0.02
+    ? `<p class="note ok-sync">✓ Somme des articles = total du ticket (${euros(t.total)}) : toutes les lignes ont été lues.</p>`
+    : `<p class="note pend-sync">Somme des articles ${euros(somme)} ≠ total du ticket ${euros(t.total)} (écart ${euros(ecart)}) : une ligne a peut-être été mal lue ou oubliée.</p>`;
+}
 const boton = (accion, texto, clase) => `<button type="button" class="${clase}" data-a="${accion}">${texto}</button>`;
 const euros = (p) => (p == null ? '' : `${p.toFixed(2).replace('.', ',')} €`);
 
@@ -969,6 +979,7 @@ function pintarTicket() {
         <label class="field">Commune<input data-tk="commune" list="communes" value="${esc(t.commune)}"></label>
       </div>
       ${t.source === 'pdf-texte' ? '' : '<p class="note"><strong>Vérifiez la date et l’enseigne</strong> : lues sur une image, elles peuvent contenir une erreur (un 7 lu comme un 1, par exemple).</p>'}
+      ${controlTotal(t)}
       <p class="note">${t.lignes.length} articles · ${n('sur')} reconnus · ${n('probable')} à confirmer · ${n('aucun')} à scanner · ${n('achat')} achats ajoutés · ${n('ignore')} ignorés</p>
       ${n('sur') ? `<div class="actions">${boton('todos', `Ajouter les ${n('sur')} achats reconnus`, 'primary')}</div>` : ''}
       ${anteriores}
