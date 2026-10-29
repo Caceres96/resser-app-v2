@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Resser · bêta tickets</title>
+  <meta name="description" content="Version bêta : emballages à partir du code-barres et du ticket de caisse.">
+  <meta name="theme-color" content="#3c3489">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="top">
+    <div class="brand">
+      <img src="icon.svg" alt="" width="30" height="30">
+      <div><strong>Resser <span class="beta">bêta</span></strong><span>Tickets de caisse · emballages</span></div>
+    </div>
+    <nav class="tabs">
+      <button type="button" data-tab="escanear" class="active">Scanner</button>
+      <button type="button" data-tab="ticket">Ticket</button>
+      <button type="button" data-tab="inventario">Inventaire <span id="count" class="pill">0</span></button>
+      <button type="button" data-tab="resumen">Synthèse</button>
+    </nav>
+  </header>
+
+  <main>
+    <section id="tab-escanear" class="tab active">
+      <details class="card" id="contexto">
+        <summary><strong>Contexte d'achat</strong> <span id="contexto-resumen" class="note"></span></summary>
+        <div class="grid" style="margin-top:10px">
+          <label class="field">Votre nom<input id="cfg-nombre" autocomplete="name" placeholder="ex. Cristian"></label>
+          <label class="field">Clé de l'équipe<input id="cfg-cle" autocomplete="off" placeholder="fournie par l'équipe"></label>
+          <label class="field">Enseigne<input id="ctx-enseigne" list="enseignes" autocomplete="off" placeholder="ex. Carrefour"></label>
+          <label class="field">Commune<input id="ctx-commune" list="communes" autocomplete="off" placeholder="ex. Nancy"></label>
+          <label class="field">Date d'achat<input id="ctx-fecha" type="date"></label>
+        </div>
+        <p id="cle-estado" class="muted" role="status"></p>
+        <p class="note">Gardé entre deux scans : renseignez-le une fois par ticket. Votre nom accompagne chaque produit envoyé à la feuille de l'équipe.</p>
+      </details>
+
+      <div id="enlace" class="enlace" hidden>
+        <span>Ligne du ticket à lier : <strong id="enlace-libelle"></strong><br><span class="note">Scannez ce produit : son libellé sera mémorisé pour les prochains tickets.</span></span>
+        <button type="button" id="enlace-annuler" class="ghost">Annuler</button>
+      </div>
+
+      <div class="card">
+        <label class="field">Rayon
+          <select id="categoria"></select>
+        </label>
+        <div class="row">
+          <input id="gtin" inputmode="numeric" autocomplete="off" placeholder="Code-barres (EAN-13, EAN-8…)">
+          <button id="buscar" type="button" class="primary">Rechercher</button>
+        </div>
+        <div id="botones-scan">
+          <div class="row scan">
+            <button id="camara" type="button" class="secondary">Scanner avec la caméra</button>
+            <label class="button secondary">Photo du code<input id="foto" type="file" accept="image/*" capture="environment" hidden></label>
+          </div>
+          <button id="sin-codigo" type="button" class="ghost wide">Produit sans code-barres (vrac, fruits et légumes…)</button>
+        </div>
+        <div id="lector" hidden>
+          <div class="visor"><video id="video" playsinline muted></video><div class="mira"></div></div>
+          <div class="row scan">
+            <button id="linterna" type="button" class="secondary" hidden>Lampe</button>
+            <button id="cerrar-camara" type="button" class="ghost">Fermer la caméra</button>
+          </div>
+        </div>
+        <p id="estado" class="muted" role="status"></p>
+      </div>
+      <div id="editor"></div>
+    </section>
+
+    <section id="tab-ticket" class="tab">
+      <div class="card">
+        <h3>Lire un ticket de caisse</h3>
+        <p class="note">Photographiez le ticket à plat, bien éclairé, en entier. La lecture se fait sur le téléphone ; la photo n'est pas conservée, seules les lignes d'articles le sont.</p>
+        <label class="button primary wide">Photographier le ticket<input id="ticket-foto" type="file" accept="image/*" capture="environment" hidden></label>
+        <div class="barra-ticket" id="ticket-progreso" hidden><div class="bar"><div id="ticket-barra" style="flex:0;background:var(--accent)"></div><div style="flex:1"></div></div></div>
+        <p id="ticket-estado" class="muted" role="status"></p>
+      </div>
+      <div id="ticket-vista"></div>
+    </section>
+
+    <section id="tab-inventario" class="tab">
+      <div class="card">
+        <strong>Feuille de l'équipe</strong> <span id="sync-resumen" class="note"></span>
+        <div class="actions">
+          <button type="button" id="sync-todo" class="secondary">Envoyer les références en attente</button>
+        </div>
+        <p id="sync-estado" class="muted" role="status"></p>
+      </div>
+      <div class="card">
+        <div class="row">
+          <input id="filtro" type="search" placeholder="Filtrer par nom, marque, libellé ou code">
+        </div>
+        <div class="actions">
+          <button type="button" id="exp-ref" class="secondary">CSV références</button>
+          <button type="button" id="exp-comp" class="secondary">CSV composants</button>
+          <button type="button" id="exp-json" class="secondary">Sauvegarde JSON</button>
+          <label class="button secondary">Importer JSON<input id="imp-json" type="file" accept="application/json,.json" hidden></label>
+        </div>
+      </div>
+      <ul id="lista" class="lista"></ul>
+      <button type="button" id="borrar-todo" class="danger ghost wide">Effacer tout l'inventaire de ce téléphone</button>
+    </section>
+
+    <section id="tab-resumen" class="tab"></section>
+  </main>
+
+  <datalist id="enseignes"></datalist>
+  <datalist id="communes"></datalist>
+  <div id="toast" role="status" aria-live="polite"></div>
+  <script type="module" src="app.js"></script>
+</body>
+</html>

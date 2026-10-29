@@ -1,0 +1,14 @@
+{
+  "name": "Resser · bêta tickets de caisse",
+  "short_name": "Resser β",
+  "description": "Version bêta : emballages à partir du code-barres et du ticket de caisse (étude de faisabilité, Métropole du Grand Nancy).",
+  "lang": "fr",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f4f6f5",
+  "theme_color": "#3c3489",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
