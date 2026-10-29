@@ -193,3 +193,26 @@ td.num, th.num { text-align: right; }
   max-width: calc(100% - 32px); transition: transform .25s; z-index: 10; font-size: 14px;
 }
 #toast.show { transform: translateX(-50%) translateY(0); }
+
+/* Scan rapide : un gros bouton, les autres voies en liens ; vue rapide du résultat. */
+.grande { font-size: 18px; padding: 16px; }
+.enlaces { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 18px; margin-top: 10px; }
+.lnk { background: none; border: none; padding: 6px 0; color: var(--accent); font-weight: 600; font-size: 14px; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; display: inline-block; }
+#manual { margin-top: 10px; }
+.prod .meta strong { font-size: 16px; }
+.certeza { margin-top: 6px; font-size: 14px; font-weight: 600; }
+.certeza.good { color: var(--good); }
+.certeza.good::before { content: '✓ '; }
+.certeza.warn { color: var(--warn); }
+.certeza.bad { color: var(--bad); }
+.certeza.muted { color: var(--muted); }
+.envases { list-style: none; padding: 0; margin: 14px 0 4px; }
+.envases li { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 11px 0; border-top: 1px solid var(--line); font-size: 15px; }
+.tri { flex: none; font-size: 13px; font-weight: 700; padding: 4px 10px; border-radius: 999px; white-space: nowrap; }
+.tri-jaune { background: rgba(242, 191, 0, .25); color: var(--ink); }
+.tri-verre { background: rgba(44, 122, 75, .2); color: var(--ink); }
+.tri-om { background: rgba(120, 120, 120, .2); color: var(--ink); }
+.tri-nd { background: rgba(179, 54, 43, .15); color: var(--bad); }
+.rapido > .lnk { margin-top: 6px; }
+details.mini { margin: -4px 0 8px; }
+details.mini > summary { cursor: pointer; font-size: 13px; color: var(--muted); }

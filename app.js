@@ -4,7 +4,7 @@ import {
 } from './reglas.js';
 import { lireTicket, lireTicketPdf, apparier, ajouterLibelle, libellesDe, detecterDate, detecterEnseigne, detecterTotal, requeteRecherche } from './ticket.js';
 
-const APP_VERSION = '1.0.0-beta';
+const APP_VERSION = '1.1.0-beta';
 // Version bêta : stockage séparé de l'application stable (même origine github.io, autre clé),
 // pour qu'une erreur ici ne touche jamais l'inventaire de la version stable.
 const KEY = 'resser.v2';
@@ -301,12 +301,12 @@ function resumirContexto() {
 resumirContexto();
 if (!db.prefs.contexto.enseigne || !db.prefs.nombre || !db.prefs.sync_cle) $('#contexto').open = true;
 
-const selCat = $('#categoria');
-selCat.innerHTML = opciones(CATEGORIAS, db.prefs.categoria || CATEGORIAS[0].id);
-selCat.addEventListener('change', () => { db.prefs.categoria = selCat.value; guardar(); });
-
 // ---------- Recherche ----------
 
+$('#ver-manual').addEventListener('click', () => {
+  $('#manual').hidden = !$('#manual').hidden;
+  if (!$('#manual').hidden) $('#gtin').focus();
+});
 $('#buscar').addEventListener('click', () => buscar($('#gtin').value));
 $('#gtin').addEventListener('keydown', (e) => { if (e.key === 'Enter') buscar(e.target.value); });
 
@@ -317,15 +317,17 @@ const normalizar = (texto) => {
 };
 
 let buscando = false;
-async function buscar(valor, { reconsultar = false } = {}) {
+let viaCamara = false; // dernier code lu par la caméra en direct : on la rouvre après l'enregistrement
+async function buscar(valor, { reconsultar = false, camara = false } = {}) {
   const gtin = normalizar(valor);
   if (!gtin) return estado('Saisissez ou scannez un code.');
   if (buscando) return;
   if (!gtinValido(gtin)) toast('La clé de contrôle ne correspond pas : vérifiez le code.');
   $('#gtin').value = gtin;
+  if (!reconsultar) viaCamara = camara;
 
   if (db.refs[gtin] && !reconsultar) {
-    estado("Cette référence est déjà dans l'inventaire.");
+    estado('');
     abrirEditor(structuredClone(db.refs[gtin]));
     verificarEquipo(gtin);
     return;
@@ -361,10 +363,7 @@ async function buscar(valor, { reconsultar = false } = {}) {
       estado('Données mises à jour. Vérifiez à nouveau puis enregistrez.');
       abrirEditor(r, actual?._origen || 'scan');
     } else {
-      const base = labelDe(BASES, res.base);
-      estado((res.estado === 'encontrado'
-        ? `Nouveau pour l'équipe, trouvé dans ${base}. Vérifiez les emballages sur le produit physique et prenez une photo.`
-        : 'Produit nouveau : absent de la feuille et des bases Open Facts. Prenez une photo, puis décrivez les emballages.') + avisoHoja);
+      estado((res.estado === 'encontrado' ? '' : 'Produit inconnu : décrivez son emballage.') + avisoHoja);
       abrirEditor(nuevoRegistro(gtin, res));
     }
   } catch (e) {
@@ -529,7 +528,7 @@ async function abrirCamara() {
             if (repeticiones >= 2) {
               if (navigator.vibrate) navigator.vibrate(80);
               cerrarCamara();
-              buscar(code);
+              buscar(code, { camara: true });
               return;
             }
           }
@@ -595,54 +594,103 @@ function abrirEditor(r, origen = 'scan') {
     const NOTE_NOM = 'Produit choisi d’après le libellé du ticket (suggestion Open Food Facts) : vérifier la variante et l’emballage.';
     if (e.viaNom && !String(actual.obs || '').includes(NOTE_NOM)) actual.obs = [actual.obs, NOTE_NOM].filter(Boolean).join(' ');
   }
+  // Après un scan, vue rapide s'il y a déjà un emballage décrit ; sinon on passe directement à la saisie.
+  const describe = actual.sin_envase || actual.componentes.length > 0;
+  actual._modo = origen === 'scan' && describe ? 'rapido' : 'edicion';
+  // Saisie depuis un scan : la personne a le produit en main.
+  if (actual._modo === 'edicion' && origen === 'scan') actual.verificado = true;
   pintarEditor();
   $('#editor').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+// Niveau de certitude de la fiche affichée : d'où viennent les emballages et s'ils ont été vérifiés.
+function certeza(r) {
+  const local = db.refs[r.gtin];
+  const eq = r._equipo;
+  if (eq) {
+    return eq.verificado
+      ? { tono: 'good', txt: `Vérifié par ${eq.por} le ${fechaCorta(eq.fecha)}` }
+      : { tono: 'warn', txt: `Décrit par ${eq.por}, pas encore vérifié : comparez avec le produit` };
+  }
+  if (local) {
+    return local.verificado
+      ? { tono: 'good', txt: `Déjà vérifié (${fechaCorta(local.actualizado)})` }
+      : { tono: 'warn', txt: 'Déjà enregistré, pas encore vérifié : comparez avec le produit' };
+  }
+  if (r.off.estado === 'encontrado') {
+    const base = BASES.find((b) => b.id === r.off.base) || BASES[0];
+    return { tono: 'warn', txt: `D'après ${base.label} : comparez avec le produit` };
+  }
+  if (r.off.estado === 'sin_codigo') return { tono: 'muted', txt: 'Produit sans code-barres' };
+  return { tono: 'bad', txt: 'Produit inconnu : décrivez son emballage' };
+}
+
+function cabecera(r) {
+  const c = certeza(r);
+  const titulo = [r.nombre || 'Produit sans nom', r.marca && `(${r.marca})`].filter(Boolean).join(' ');
+  return `
+    <div class="prod">
+      ${r.imagen ? `<img src="${esc(r.imagen)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : ''}
+      <div class="meta">
+        <strong>${esc(titulo)}</strong>
+        <div class="note">${esc([r.cantidad, r.off.estado === 'sin_codigo' ? '' : r.gtin].filter(Boolean).join(' · '))}</div>
+        <div class="certeza ${c.tono}">${esc(c.txt)}</div>
+      </div>
+    </div>`;
+}
+
+const TRI_CORTO = { jaune: 'Bac jaune', verre: 'Verre', om: 'Ordures ménagères', nd: 'À déterminer' };
+
+function filaEnvase(c) {
+  const fam = familiaDe(c.material);
+  const tri = consignaTri(fam);
+  const forma = c.forma ? labelForma(c.forma) : 'Emballage';
+  const mat = c.material ? labelMaterial(c.material) : 'matériau ?';
+  const n = Number(c.unidades) > 1 ? ` ×${c.unidades}` : '';
+  return `<li><span><span class="dot" style="background:${FAMILIAS[fam].color}"></span><strong>${esc(forma)}${n}</strong> · ${esc(mat)}</span>
+    <span class="tri tri-${tri.id}">${esc(TRI_CORTO[tri.id] || tri.label)}</span></li>`;
+}
+
+function avisoVersionNueva(r) {
+  const nv = r._nuevo;
+  return nv ? `
+    <div class="card aviso"><strong>Version plus récente dans la feuille</strong> : ${esc(nv.saisi_par || "l'équipe")}, le ${esc(fechaCorta(nv.actualizado))}, classe ${esc(claseFinal(nv))}${nv.verificado ? ', vérifiée' : ''}.
+      <div class="actions"><button type="button" id="usar-equipo" class="secondary">Charger cette version</button></div></div>` : '';
 }
 
 function pintarEditor() {
   const r = actual;
   const ed = $('#editor');
   if (!r) { ed.innerHTML = ''; return; }
+  if (r._modo === 'rapido') return pintarRapido(r, ed);
   const enOFF = r.off.estado === 'encontrado';
   const sinCodigo = r.off.estado === 'sin_codigo';
   const base = BASES.find((b) => b.id === r.off.base) || BASES[0];
-  const completo = r.off.packagings_complete;
   const yaGuardado = !!db.refs[r.gtin];
-  const insignia = enOFF
-    ? `<span class="badge good">Dans ${esc(base.label)}</span>`
-    : sinCodigo ? '<span class="badge">Sans code-barres</span>' : '<span class="badge bad">Introuvable dans les bases Open Facts</span>';
   const foto = r.photo || r._photo;
   const nuevo = !yaGuardado && !r._equipo;
-  const eq = r._equipo;
-  const avisoEquipo = eq ? `
-    <div class="card aviso"><strong>Déjà caractérisé par ${esc(eq.por)}</strong> le ${esc(fechaCorta(eq.fecha))}
-      · classe ${esc(eq.clase)}${eq.verificado ? ' · vérifié' : ''}.
-      <div class="note">Les champs sont pré-remplis depuis la feuille de l'équipe : vérifiez, complétez si besoin, puis enregistrez.</div></div>` : '';
-  const nv = r._nuevo;
-  const avisoNuevo = nv ? `
-    <div class="card aviso"><strong>Version plus récente dans la feuille</strong> : ${esc(nv.saisi_par || "l'équipe")}, le ${esc(fechaCorta(nv.actualizado))}, classe ${esc(claseFinal(nv))}${nv.verificado ? ', vérifiée' : ''}.
-      <div class="actions"><button type="button" id="usar-equipo" class="secondary">Charger cette version</button></div></div>` : '';
 
-  ed.innerHTML = `${avisoEquipo}${avisoNuevo}
+  ed.innerHTML = `${avisoVersionNueva(r)}
     <div class="card">
-      <div class="prod">
-        ${r.imagen ? `<img src="${esc(r.imagen)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : ''}
-        <div class="meta">
-          <div class="gtin">${esc(r.gtin)}</div>
-          <div>
-            ${insignia}
-            ${enOFF ? `<span class="badge ${completo ? '' : 'warn'}">${completo ? 'Emballages marqués complets' : 'Emballages incomplets'}</span>` : ''}
-            ${enOFF ? `<span class="badge">${r.off.packagings.length} comp. dans la base</span>` : ''}
-          </div>
-          ${enOFF ? `<a class="note" href="https://${base.host}/product/${esc(r.gtin)}" target="_blank" rel="noopener">Voir la fiche ${esc(base.label)}</a>` : ''}
-        </div>
-      </div>
+      ${cabecera(r)}
+      ${sinCodigo ? `<label class="field" style="margin-top:10px">Nom du produit<input data-k="nombre" value="${esc(r.nombre)}" placeholder="ex. Pommes Golden"></label>` : ''}
     </div>
 
     <div class="card">
-      <h3>Produit</h3>
-      <div class="grid">
-        <label class="field">Nom / variante<input data-k="nombre" value="${esc(r.nombre)}"></label>
+      <h3>Emballage</h3>
+      <label class="check"><input type="checkbox" data-k="sin_envase" ${r.sin_envase ? 'checked' : ''}> Vendu sans emballage (vrac)</label>
+      <div id="bloque-comps" ${r.sin_envase ? 'hidden' : ''}>
+        <div id="comps">${r.componentes.map(pintarComponente).join('') || '<p class="vacio">Ajoutez chaque élément de l’emballage : bouteille, bouchon, étiquette…</p>'}</div>
+        <button type="button" id="add-comp" class="secondary wide">Ajouter un élément</button>
+      </div>
+      ${foto ? `<img class="foto" src="${esc(foto)}" alt="Photo du produit">` : ''}
+      <label class="button ${foto ? 'ghost' : 'secondary'} wide">${foto ? 'Reprendre la photo' : nuevo ? 'Prendre une photo (produit nouveau)' : 'Prendre une photo'}<input id="foto-producto" type="file" accept="image/*" capture="environment" hidden></label>
+    </div>
+
+    <details class="card">
+      <summary><strong>Plus de détails</strong> <span class="note">produit, achat, poids, qualité</span></summary>
+      <div class="grid" style="margin-top:10px">
+        ${sinCodigo ? '' : `<label class="field">Nom / variante<input data-k="nombre" value="${esc(r.nombre)}"></label>`}
         <label class="field">Marque<input data-k="marca" value="${esc(r.marca)}"></label>
         <label class="field">Quantité<input data-k="cantidad" value="${esc(r.cantidad)}" placeholder="ex. 1,5 L"></label>
         <label class="field">Rayon<select data-k="categoria">${opciones(CATEGORIAS, r.categoria)}</select></label>
@@ -653,27 +701,7 @@ function pintarEditor() {
         <label class="field">Commune<input data-k="commune" list="communes" value="${esc(r.commune)}"></label>
         <label class="field">Date d'achat<input data-k="date_achat" type="date" value="${esc(r.date_achat)}"></label>
       </div>
-    </div>
-
-    <div class="card">
-      <h3>Photo du produit</h3>
-      ${foto ? `<img class="foto" src="${esc(foto)}" alt="Photo du produit">` : `<p class="note">${nuevo ? 'Produit nouveau pour l’équipe : prenez une photo de face, emballage visible.' : 'Aucune photo pour l’instant.'}</p>`}
-      <label class="button ${foto ? 'secondary' : 'primary'} wide">${foto ? 'Reprendre la photo' : 'Prendre une photo'}<input id="foto-producto" type="file" accept="image/*" capture="environment" hidden></label>
-    </div>
-
-    <div class="card">
-      <h3>Composants de l'emballage</h3>
-      <label class="check"><input type="checkbox" data-k="sin_envase" ${r.sin_envase ? 'checked' : ''}> Produit vendu sans emballage (vrac)</label>
-      <div id="bloque-comps" ${r.sin_envase ? 'hidden' : ''}>
-        <p class="note">Chaque ligne est un composant d'une unité de vente (bouteille, bouchon, étiquette…). Le poids s'entend par unité de composant.</p>
-        <div id="comps">${r.componentes.map(pintarComponente).join('') || '<p class="vacio">Aucun composant. Ajoutez ceux que vous observez sur le produit.</p>'}</div>
-        <button type="button" id="add-comp" class="secondary wide">Ajouter un composant</button>
-        <p class="note">Consignes de tri : ${esc(FUENTE_TRI)}</p>
-      </div>
-    </div>
-
-    <div class="card">
-      <h3>Vérification et qualité</h3>
+      ${enOFF ? `<p class="note"><a href="https://${base.host}/product/${esc(r.gtin)}" target="_blank" rel="noopener">Voir la fiche ${esc(base.label)}</a> · ${r.off.packagings.length} élément(s) dans la base${r.off.packagings_complete ? ', marqués complets' : ''}</p>` : ''}
       <label class="check"><input type="checkbox" data-k="verificado" ${r.verificado ? 'checked' : ''}> Emballages vérifiés sur le produit physique</label>
       <div class="grid">
         <label class="field">Données de la base sur les emballages<select data-k="exactitud_off">${opciones(EXACTITUD, r.exactitud_off)}</select></label>
@@ -694,27 +722,52 @@ function pintarEditor() {
       <p class="note" id="masa"></p>
       ${r._origen === 'liste' ? '<p class="note">Correction d’une fiche : n’ajoute pas d’achat au tableau de bord. Pour un nouvel achat, scannez le produit.</p>' : ''}
       <label class="field">Observations<textarea data-k="obs" placeholder="Ce qui ne correspondait pas, méthode de pesée, photo prise…">${esc(r.obs)}</textarea></label>
-      <div class="actions">
-        <button type="button" id="guardar" class="primary">Enregistrer la référence</button>
-        ${(yaGuardado || eq) && enOFF ? '<button type="button" id="reconsultar" class="secondary">Réinterroger la base</button>' : ''}
-        <button type="button" id="descartar" class="ghost">${yaGuardado ? 'Fermer' : 'Abandonner'}</button>
-      </div>
+      <p class="note">Consignes de tri : ${esc(FUENTE_TRI)}</p>
+      ${(yaGuardado || r._equipo) && enOFF ? '<button type="button" id="reconsultar" class="secondary">Réinterroger la base</button>' : ''}
+    </details>
+
+    <div class="actions">
+      <button type="button" id="guardar" class="primary grande" style="flex:1">Enregistrer</button>
+      <button type="button" id="descartar" class="ghost">${yaGuardado ? 'Fermer' : 'Annuler'}</button>
     </div>`;
   refrescarDerivados();
 }
 
+// Vue rapide après un scan : le produit, la certitude, les emballages et leur bac ; un geste pour confirmer.
+function pintarRapido(r, ed) {
+  const foto = r.photo || r._photo;
+  const nuevo = !db.refs[r.gtin] && !r._equipo;
+  const envases = r.sin_envase
+    ? '<li><span><strong>Vendu sans emballage</strong></span></li>'
+    : r.componentes.map(filaEnvase).join('');
+  ed.innerHTML = `${avisoVersionNueva(r)}
+    <div class="card rapido">
+      ${cabecera(r)}
+      <ul class="envases">${envases}</ul>
+      ${foto || !nuevo ? '' : '<label class="lnk">Ajouter une photo (produit nouveau pour l’équipe)<input id="foto-producto" type="file" accept="image/*" capture="environment" hidden></label>'}
+      <button type="button" id="confirmar" class="primary grande wide">C'est bien ça</button>
+      <button type="button" id="corregir" class="secondary wide">Corriger l'emballage</button>
+      <div class="enlaces"><button type="button" id="descartar" class="lnk">Annuler</button></div>
+    </div>`;
+}
+
 function pintarComponente(c, i) {
+  const peso = c.peso_g != null && c.peso_g !== '' ? ` : ${c.peso_g} g` : '';
   return `
     <div class="comp" data-i="${i}">
-      <div class="comp-head"><span>Composant ${i + 1}${c.origen === 'off' ? ' <span class="badge">OFF</span>' : ''}</span>
-        <button type="button" class="ghost" data-del="${i}" aria-label="Supprimer le composant">Supprimer</button></div>
+      <div class="comp-head"><span>Élément ${i + 1}${c.origen === 'off' ? ' <span class="badge">OFF</span>' : ''}</span>
+        <button type="button" class="ghost" data-del="${i}" aria-label="Supprimer l'élément">Supprimer</button></div>
       <div class="grid">
         <label class="field">Forme<select data-c="forma">${opciones([{ id: '', label: '— sans forme —' }, ...FORMAS], c.forma)}</select></label>
         <label class="field">Matériau<select data-c="material">${opciones([{ id: '', label: '— sans matériau —' }, ...MATERIALES], c.material)}</select></label>
-        <label class="field">Unités par produit<input data-c="unidades" type="number" min="0" step="1" value="${esc(c.unidades)}"></label>
-        <label class="field">Poids par unité (g)<input data-c="peso_g" type="number" min="0" step="0.1" value="${esc(c.peso_g)}"></label>
-        <label class="field">Source du poids<select data-c="peso_fuente">${opciones(PESO_FUENTES, c.peso_fuente)}</select></label>
+        <label class="field">Nombre<input data-c="unidades" type="number" min="0" step="1" value="${esc(c.unidades)}"></label>
       </div>
+      <details class="mini"><summary>Poids${esc(peso)}</summary>
+        <div class="grid">
+          <label class="field">Poids par unité (g)<input data-c="peso_g" type="number" min="0" step="0.1" value="${esc(c.peso_g)}"></label>
+          <label class="field">Source du poids<select data-c="peso_fuente">${opciones(PESO_FUENTES, c.peso_fuente)}</select></label>
+        </div>
+      </details>
       <div class="comp-foot" data-foot></div>
     </div>`;
 }
@@ -776,6 +829,7 @@ function alEditar(e) {
   if (!actual || t.id === 'foto-producto') return;
   if (t.dataset.k) {
     actual[t.dataset.k] = t.type === 'checkbox' ? t.checked : t.value;
+    if (t.dataset.k === 'categoria') { db.prefs.categoria = t.value; guardar(); }
   } else if (t.dataset.c) {
     const i = Number(t.closest('.comp').dataset.i);
     const comp = actual.componentes[i];
@@ -799,36 +853,15 @@ $('#editor').addEventListener('click', (e) => {
   } else if (t.dataset.del != null) {
     actual.componentes.splice(Number(t.dataset.del), 1);
     pintarEditor();
-  } else if (t.id === 'guardar') {
-    if (!db.prefs.nombre) {
-      $('#contexto').open = true;
-      $('#cfg-nombre').focus();
-      $('#contexto').scrollIntoView({ behavior: 'smooth' });
-      return toast('Indiquez votre nom dans « Contexte d’achat » avant d’enregistrer.');
-    }
-    if (actual.off.estado === 'sin_codigo' && !actual.nombre.trim()) return toast('Donnez un nom au produit sans code-barres.');
-    if (actual.sin_envase) actual.componentes = [];
-    if (actual._origen === 'scan') actual.achat_pendiente = true;
-    const origenGuardado = actual._origen;
-    for (const k of Object.keys(actual)) if (k.startsWith('_')) delete actual[k];
-    actual.actualizado = ahora();
-    actual.version_app = APP_VERSION;
-    // saisi_par = dernière personne à avoir enregistré la fiche.
-    actual.saisi_par = db.prefs.nombre || actual.saisi_par || '';
-    actual.sync = 'pendiente';
-    const gtin = actual.gtin;
-    db.refs[gtin] = actual;
-    guardar();
-    contar();
-    toast(`Enregistré · classe ${claseFinal(actual)}`);
-    const lie = enlaceActivo();
-    if (lie && origenGuardado === 'scan') cerrarEnlace(gtin, actual.nombre);
-    actual = null;
+  } else if (t.id === 'confirmar') {
+    actual.verificado = true;
+    guardarActual();
+  } else if (t.id === 'corregir') {
+    actual._modo = 'edicion';
+    if (actual._origen === 'scan') actual.verificado = true;
     pintarEditor();
-    $('#gtin').value = '';
-    estado(`${Object.keys(db.refs).length} référence(s) dans l'inventaire.`);
-    sincronizar([gtin]);
-    if (lie && db.refs[gtin]) mostrarTab('ticket');
+  } else if (t.id === 'guardar') {
+    guardarActual();
   } else if (t.id === 'usar-equipo') {
     abrirEditor(desdeEquipo(actual._nuevo, actual._nuevoPhoto), actual._origen);
   } else if (t.id === 'reconsultar') {
@@ -839,6 +872,51 @@ $('#editor').addEventListener('click', (e) => {
     estado('');
   }
 });
+
+// Les emballages venus de la base ont-ils été modifiés ? Sert à remplir « Données de la base » sans le demander.
+function exactitudDeducida(r) {
+  if (r.off.estado !== 'encontrado' || !r.verificado || r.exactitud_off) return r.exactitud_off;
+  if (!r.off.packagings.length) return 'sin_datos';
+  const intactos = r.componentes.length === r.off.packagings.length && r.componentes.every((c) => c.origen === 'off');
+  return intactos ? 'correcto' : 'parcial';
+}
+
+function guardarActual() {
+  if (!db.prefs.nombre) {
+    $('#contexto').open = true;
+    $('#cfg-nombre').focus();
+    $('#contexto').scrollIntoView({ behavior: 'smooth' });
+    return toast('Indiquez votre nom dans « Contexte d’achat » avant d’enregistrer.');
+  }
+  if (actual.off.estado === 'sin_codigo' && !actual.nombre.trim()) return toast('Donnez un nom au produit sans code-barres.');
+  if (actual.sin_envase) actual.componentes = [];
+  if (actual._origen === 'scan') actual.achat_pendiente = true;
+  actual.exactitud_off = exactitudDeducida(actual);
+  const origenGuardado = actual._origen;
+  for (const k of Object.keys(actual)) if (k.startsWith('_')) delete actual[k];
+  actual.actualizado = ahora();
+  actual.version_app = APP_VERSION;
+  // saisi_par = dernière personne à avoir enregistré la fiche.
+  actual.saisi_par = db.prefs.nombre || actual.saisi_par || '';
+  actual.sync = 'pendiente';
+  const gtin = actual.gtin;
+  db.refs[gtin] = actual;
+  guardar();
+  contar();
+  toast(`Enregistré · ${actual.nombre || gtin}`);
+  const lie = enlaceActivo();
+  if (lie && origenGuardado === 'scan') cerrarEnlace(gtin, actual.nombre);
+  actual = null;
+  pintarEditor();
+  $('#gtin').value = '';
+  $('#manual').hidden = true;
+  estado('');
+  sincronizar([gtin]);
+  if (lie && db.refs[gtin]) return mostrarTab('ticket');
+  // Enchaîner : la caméra se rouvre pour le produit suivant.
+  if (viaCamara && origenGuardado === 'scan') abrirCamara();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
 
 // ---------- Tickets de caisse ----------
 

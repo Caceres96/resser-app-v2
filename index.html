@@ -45,19 +45,17 @@
       </div>
 
       <div class="card">
-        <label class="field">Rayon
-          <select id="categoria"></select>
-        </label>
-        <div class="row">
-          <input id="gtin" inputmode="numeric" autocomplete="off" placeholder="Code-barres (EAN-13, EAN-8…)">
-          <button id="buscar" type="button" class="primary">Rechercher</button>
-        </div>
         <div id="botones-scan">
-          <div class="row scan">
-            <button id="camara" type="button" class="secondary">Scanner avec la caméra</button>
-            <label class="button secondary">Photo du code<input id="foto" type="file" accept="image/*" capture="environment" hidden></label>
+          <button id="camara" type="button" class="primary grande wide">Scanner un code-barres</button>
+          <div class="enlaces">
+            <label class="lnk">Photo du code<input id="foto" type="file" accept="image/*" capture="environment" hidden></label>
+            <button type="button" id="ver-manual" class="lnk">Saisir le code</button>
+            <button id="sin-codigo" type="button" class="lnk">Sans code-barres</button>
           </div>
-          <button id="sin-codigo" type="button" class="ghost wide">Produit sans code-barres (vrac, fruits et légumes…)</button>
+          <div class="row" id="manual" hidden>
+            <input id="gtin" inputmode="numeric" autocomplete="off" placeholder="Code-barres (EAN-13, EAN-8…)">
+            <button id="buscar" type="button" class="primary">Rechercher</button>
+          </div>
         </div>
         <div id="lector" hidden>
           <div class="visor"><video id="video" playsinline muted></video><div class="mira"></div></div>
