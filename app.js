@@ -907,24 +907,24 @@ async function procesarTicket(lector, mensaje, sinArticulos) {
   }
 }
 
-$('#ticket-foto').addEventListener('change', (e) => {
+// « Photographier » ouvre l'appareil photo ; « Galerie ou PDF » ouvre la galerie ou les fichiers.
+function leerArchivoTicket(e) {
   const f = e.target.files[0];
   e.target.value = '';
   if (!f) return;
+  if (f.type === 'application/pdf' || /\.pdf$/i.test(f.name)) {
+    procesarTicket((p) => lireTicketPdf(f, p), 'Lecture du ticket PDF…',
+      'Aucune ligne d’article trouvée dans ce PDF. Est-ce bien un ticket de caisse ?');
+    return;
+  }
   procesarTicket(async (p) => {
     const img = await createImageBitmap(f);
     try { return await lireTicket(img, p); } finally { img.close?.(); }
   }, 'Lecture du ticket… La première fois, le moteur de lecture et le français se téléchargent (≈ 15 Mo).',
   'Aucune ligne d’article lue. Reprenez la photo : ticket à plat, bien éclairé, sans reflet, en entier.');
-});
-
-$('#ticket-pdf').addEventListener('change', (e) => {
-  const f = e.target.files[0];
-  e.target.value = '';
-  if (!f) return;
-  procesarTicket((p) => lireTicketPdf(f, p), 'Lecture du ticket PDF…',
-    'Aucune ligne d’article trouvée dans ce PDF. Est-ce bien un ticket de caisse ?');
-});
+}
+$('#ticket-foto').addEventListener('change', leerArchivoTicket);
+$('#ticket-archivo').addEventListener('change', leerArchivoTicket);
 
 let ticketVu = null;
 const boton = (accion, texto, clase) => `<button type="button" class="${clase}" data-a="${accion}">${texto}</button>`;
