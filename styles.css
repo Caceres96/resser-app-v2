@@ -216,3 +216,12 @@ td.num, th.num { text-align: right; }
 .rapido > .lnk { margin-top: 6px; }
 details.mini { margin: -4px 0 8px; }
 details.mini > summary { cursor: pointer; font-size: 13px; color: var(--muted); }
+
+/* Information manquante sur l'emballage : rouge clignotant (fixe si l'utilisateur réduit les animations). */
+@keyframes clignote { from { box-shadow: 0 0 0 0 rgba(214, 48, 39, .0); } to { box-shadow: 0 0 0 4px rgba(214, 48, 39, .55); } }
+.alerta, details.alerta > summary { border-color: #d63027 !important; color: #d63027 !important; }
+button.alerta, details.card.alerta { animation: clignote .8s ease-in-out infinite alternate; }
+button.alerta { background: rgba(214, 48, 39, .08); }
+.falta { border-color: #d63027 !important; background: rgba(214, 48, 39, .06) !important; }
+.sin-peso { color: #d63027; font-weight: 600; }
+@media (prefers-reduced-motion: reduce) { button.alerta, details.card.alerta { animation: none; box-shadow: 0 0 0 3px rgba(214, 48, 39, .45); } }

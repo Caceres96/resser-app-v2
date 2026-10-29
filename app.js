@@ -1,15 +1,15 @@
 import {
-  CATEGORIAS, ALIAS_CATEGORIAS, COMMUNES, ENSEIGNES, BASES, FAMILIAS, MATERIALES, FORMAS, PESO_FUENTES, EXACTITUD,
+  CATEGORIAS, SECCIONES, normalizarRayon, seccionDe, labelRayon, sugerirRayon, COMMUNES, ENSEIGNES, BASES, FAMILIAS, MATERIALES, FORMAS, PESO_FUENTES, EXACTITUD,
   CAUSAS, ESTADOS_OFF, familiaDe, labelDe, labelMaterial, labelForma, consignaTri, FUENTE_TRI,
 } from './reglas.js';
 import { lireTicket, lireTicketPdf, apparier, ajouterLibelle, libellesDe, detecterDate, detecterEnseigne, detecterTotal, requeteRecherche } from './ticket.js';
 
-const APP_VERSION = '1.1.0-beta';
+const APP_VERSION = '1.2.0-beta';
 // Version bêta : stockage séparé de l'application stable (même origine github.io, autre clé),
 // pour qu'une erreur ici ne touche jamais l'inventaire de la version stable.
 const KEY = 'resser.v2';
 const KEY_STABLE = 'resser.pruebaA.v1';
-const OFF_FIELDS = 'code,product_name,product_name_fr,brands,quantity,packagings,packagings_complete,image_front_small_url';
+const OFF_FIELDS = 'code,product_name,product_name_fr,brands,quantity,packagings,packagings_complete,image_front_small_url,categories_tags';
 // Lecteur de secours (zxing-cpp en WebAssembly) quand le navigateur n'a pas de BarcodeDetector natif (iPhone, Firefox…).
 const LIB_LECTOR = 'https://cdn.jsdelivr.net/npm/barcode-detector@3.2.0/dist/iife/ponyfill.js';
 const FORMATOS = ['ean_13', 'ean_8', 'upc_a', 'upc_e'];
@@ -41,7 +41,7 @@ db.tickets ??= [];
 if (!db.prefs.reprisStable) {
   try {
     const p = JSON.parse(localStorage.getItem(KEY_STABLE))?.prefs || {};
-    for (const k of ['nombre', 'sync_cle', 'contexto', 'categoria']) if (p[k] && !db.prefs[k]) db.prefs[k] = p[k];
+    for (const k of ['nombre', 'sync_cle', 'contexto']) if (p[k] && !db.prefs[k]) db.prefs[k] = p[k];
   } catch { /* rien à reprendre */ }
   db.prefs.reprisStable = true;
 }
@@ -54,9 +54,9 @@ const FEUILLE = {
   get cle() { return db.prefs.sync_cle; },
 };
 const conectado = () => !!db.prefs.sync_cle;
-// Migration des catégories des versions ≤ 0.3 vers les rayons.
-for (const r of Object.values(db.refs)) if (ALIAS_CATEGORIAS[r.categoria]) r.categoria = ALIAS_CATEGORIAS[r.categoria];
-if (ALIAS_CATEGORIAS[db.prefs.categoria]) db.prefs.categoria = ALIAS_CATEGORIAS[db.prefs.categoria];
+// Migration des anciens rayons vers section › sous-section ('' = à choisir).
+for (const r of Object.values(db.refs)) r.categoria = normalizarRayon(r.categoria);
+delete db.prefs.categoria;
 
 // ---------- Utilitaires ----------
 
@@ -138,7 +138,8 @@ function nuevoRegistro(gtin, res) {
   const ctx = db.prefs.contexto || {};
   return {
     gtin,
-    categoria: db.prefs.categoria || CATEGORIAS[0].id,
+    categoria: sugerirRayon(p, res.base),
+    _rayon_sug: !!sugerirRayon(p, res.base),
     libelle_ticket: '',
     nombre: p.product_name_fr || p.product_name || '',
     marca: p.brands || '',
@@ -222,7 +223,7 @@ function filaRef(r) {
     nom: r.nombre,
     marque: r.marca,
     quantite: r.cantidad,
-    rayon: labelDe(CATEGORIAS, r.categoria),
+    rayon: labelRayon(r.categoria),
     enseigne: r.enseigne || '',
     commune: r.commune || '',
     date_achat: r.date_achat || '',
@@ -255,7 +256,7 @@ function filasComp(r) {
       saisi_par: r.saisi_par || '',
       gtin: r.gtin,
       nom: r.nombre,
-      rayon: labelDe(CATEGORIAS, r.categoria),
+      rayon: labelRayon(r.categoria),
       composant: i + 1,
       forme: labelForma(c.forma),
       materiau: labelMaterial(c.material),
@@ -359,6 +360,7 @@ async function buscar(valor, { reconsultar = false, camara = false } = {}) {
       const p = res.product || {};
       r.off = { estado: res.estado, base: res.base || '', packagings_complete: p.packagings_complete ?? null, packagings: p.packagings || [], consultado: ahora() };
       r.componentes = componentesDesdeOFF(p.packagings);
+      if (!r.categoria) r.categoria = sugerirRayon(p, res.base);
       r.verificado = false;
       estado('Données mises à jour. Vérifiez à nouveau puis enregistrez.');
       abrirEditor(r, actual?._origen || 'scan');
@@ -402,7 +404,7 @@ function desdeEquipo(ref, photo) {
   delete r.photo;
   r.photo_en_feuille = !!photo;
   r._photo = photo || null;
-  if (ALIAS_CATEGORIAS[r.categoria]) r.categoria = ALIAS_CATEGORIAS[r.categoria];
+  r.categoria = normalizarRayon(r.categoria);
   const ctx = db.prefs.contexto || {};
   if (ctx.enseigne) r.enseigne = ctx.enseigne;
   if (ctx.commune) r.commune = ctx.commune;
@@ -639,6 +641,18 @@ function cabecera(r) {
     </div>`;
 }
 
+// Informations encore nécessaires sur l'emballage et le rayon. Le poids sert à calculer les déchets générés.
+function faltantes(r) {
+  const f = [];
+  if (!r.sin_envase) {
+    if (!r.componentes.length) f.push('emballage');
+    if (r.componentes.some((c) => !c.forma || !c.material)) f.push('forme ou matériau');
+    if (r.componentes.some((c) => c.peso_g == null || c.peso_g === '')) f.push('poids');
+  }
+  if (!r.categoria) f.push('rayon');
+  return f;
+}
+
 const TRI_CORTO = { jaune: 'Bac jaune', verre: 'Verre', om: 'Ordures ménagères', nd: 'À déterminer' };
 
 function filaEnvase(c) {
@@ -647,7 +661,8 @@ function filaEnvase(c) {
   const forma = c.forma ? labelForma(c.forma) : 'Emballage';
   const mat = c.material ? labelMaterial(c.material) : 'matériau ?';
   const n = Number(c.unidades) > 1 ? ` ×${c.unidades}` : '';
-  return `<li><span><span class="dot" style="background:${FAMILIAS[fam].color}"></span><strong>${esc(forma)}${n}</strong> · ${esc(mat)}</span>
+  const peso = c.peso_g == null || c.peso_g === '' ? '<span class="sin-peso">poids ?</span>' : `${esc(String(c.peso_g).replace('.', ','))} g`;
+  return `<li><span><span class="dot" style="background:${FAMILIAS[fam].color}"></span><strong>${esc(forma)}${n}</strong> · ${esc(mat)} · ${peso}</span>
     <span class="tri tri-${tri.id}">${esc(TRI_CORTO[tri.id] || tri.label)}</span></li>`;
 }
 
@@ -669,6 +684,7 @@ function pintarEditor() {
   const yaGuardado = !!db.refs[r.gtin];
   const foto = r.photo || r._photo;
   const nuevo = !yaGuardado && !r._equipo;
+  const sec = seccionDe(r.categoria) || r._seccion || '';
 
   ed.innerHTML = `${avisoVersionNueva(r)}
     <div class="card">
@@ -687,13 +703,16 @@ function pintarEditor() {
       <label class="button ${foto ? 'ghost' : 'secondary'} wide">${foto ? 'Reprendre la photo' : nuevo ? 'Prendre une photo (produit nouveau)' : 'Prendre une photo'}<input id="foto-producto" type="file" accept="image/*" capture="environment" hidden></label>
     </div>
 
-    <details class="card">
-      <summary><strong>Plus de détails</strong> <span class="note">produit, achat, poids, qualité</span></summary>
+    <details class="card" id="det" ${r._det ? 'open' : ''}>
+      <summary><strong>Plus de détails</strong> <span class="note" id="det-resumen">rayon, produit, achat, qualité</span></summary>
       <div class="grid" style="margin-top:10px">
+        <label class="field">Section<select data-sec="1">${opciones([{ id: '', label: '— à choisir —' }, ...SECCIONES], sec)}</select></label>
+        <label class="field">Sous-section${r._rayon_sug && r.categoria ? ' <span class="badge">suggérée</span>' : ''}<select data-k="categoria">${opciones([{ id: '', label: '— à choisir —' }, ...CATEGORIAS.filter((c) => c.seccion === sec)], r.categoria)}</select></label>
+      </div>
+      <div class="grid">
         ${sinCodigo ? '' : `<label class="field">Nom / variante<input data-k="nombre" value="${esc(r.nombre)}"></label>`}
         <label class="field">Marque<input data-k="marca" value="${esc(r.marca)}"></label>
         <label class="field">Quantité<input data-k="cantidad" value="${esc(r.cantidad)}" placeholder="ex. 1,5 L"></label>
-        <label class="field">Rayon<select data-k="categoria">${opciones(CATEGORIAS, r.categoria)}</select></label>
       </div>
       <label class="field">Libellé sur le ticket<input data-k="libelle_ticket" value="${esc(r.libelle_ticket)}" placeholder="ex. FROM BIL MOZZA CRF"></label>
       <div class="grid">
@@ -736,6 +755,7 @@ function pintarEditor() {
 // Vue rapide après un scan : le produit, la certitude, les emballages et leur bac ; un geste pour confirmer.
 function pintarRapido(r, ed) {
   const foto = r.photo || r._photo;
+  const falta = faltantes(r);
   const nuevo = !db.refs[r.gtin] && !r._equipo;
   const envases = r.sin_envase
     ? '<li><span><strong>Vendu sans emballage</strong></span></li>'
@@ -744,15 +764,15 @@ function pintarRapido(r, ed) {
     <div class="card rapido">
       ${cabecera(r)}
       <ul class="envases">${envases}</ul>
+      ${r.categoria ? `<p class="note">Rayon : ${esc(labelRayon(r.categoria))}${r._rayon_sug ? ' (suggéré)' : ''}</p>` : ''}
       ${foto || !nuevo ? '' : '<label class="lnk">Ajouter une photo (produit nouveau pour l’équipe)<input id="foto-producto" type="file" accept="image/*" capture="environment" hidden></label>'}
       <button type="button" id="confirmar" class="primary grande wide">C'est bien ça</button>
-      <button type="button" id="corregir" class="secondary wide">Corriger l'emballage</button>
+      <button type="button" id="corregir" class="secondary wide ${falta.length ? 'alerta' : ''}">Plus de détails${falta.length ? ` · à compléter : ${esc(falta.join(', '))}` : ''}</button>
       <div class="enlaces"><button type="button" id="descartar" class="lnk">Annuler</button></div>
     </div>`;
 }
 
 function pintarComponente(c, i) {
-  const peso = c.peso_g != null && c.peso_g !== '' ? ` : ${c.peso_g} g` : '';
   return `
     <div class="comp" data-i="${i}">
       <div class="comp-head"><span>Élément ${i + 1}${c.origen === 'off' ? ' <span class="badge">OFF</span>' : ''}</span>
@@ -761,12 +781,10 @@ function pintarComponente(c, i) {
         <label class="field">Forme<select data-c="forma">${opciones([{ id: '', label: '— sans forme —' }, ...FORMAS], c.forma)}</select></label>
         <label class="field">Matériau<select data-c="material">${opciones([{ id: '', label: '— sans matériau —' }, ...MATERIALES], c.material)}</select></label>
         <label class="field">Nombre<input data-c="unidades" type="number" min="0" step="1" value="${esc(c.unidades)}"></label>
+        <label class="field">Poids par unité (g)<input data-c="peso_g" type="number" min="0" step="0.1" inputmode="decimal" value="${esc(c.peso_g)}"></label>
       </div>
-      <details class="mini"><summary>Poids${esc(peso)}</summary>
-        <div class="grid">
-          <label class="field">Poids par unité (g)<input data-c="peso_g" type="number" min="0" step="0.1" value="${esc(c.peso_g)}"></label>
-          <label class="field">Source du poids<select data-c="peso_fuente">${opciones(PESO_FUENTES, c.peso_fuente)}</select></label>
-        </div>
+      <details class="mini"><summary>Source du poids${c.peso_fuente ? ` : ${esc(labelDe(PESO_FUENTES, c.peso_fuente))}` : ''}</summary>
+        <label class="field">Source du poids<select data-c="peso_fuente">${opciones(PESO_FUENTES, c.peso_fuente)}</select></label>
       </details>
       <div class="comp-foot" data-foot></div>
     </div>`;
@@ -785,6 +803,15 @@ function refrescarDerivados() {
       <span class="badge ${tri.id === 'nd' ? 'bad' : ''}">${esc(tri.label)}</span>
       ${c.reciclaje_off ? `<span class="note">OFF : ${esc(c.reciclaje_off.replace('en:', ''))}</span>` : ''}`;
   });
+  // Champs d'emballage vides en rouge ; « Plus de détails » clignote tant qu'il manque une information.
+  document.querySelectorAll('#comps [data-c="forma"], #comps [data-c="material"], #comps [data-c="peso_g"]')
+    .forEach((el) => el.classList.toggle('falta', el.value === ''));
+  const falta = faltantes(r);
+  const det = $('#det');
+  if (det) {
+    det.classList.toggle('alerta', falta.length > 0);
+    $('#det-resumen').textContent = falta.length ? `à compléter : ${falta.join(', ')}` : 'rayon, produit, achat, qualité';
+  }
   const sug = claseSugerida(r);
   $('#clase-sug').innerHTML = `<span class="clase clase-${sug}">${sug}</span>`;
   const m = masaPlastico(r);
@@ -824,12 +851,20 @@ $('#editor').addEventListener('change', async (e) => {
 
 // 'change' couvre les navigateurs qui n'émettent pas 'input' sur select/checkbox ; mettre à jour deux fois est sans effet.
 ['input', 'change'].forEach((ev) => $('#editor').addEventListener(ev, alEditar));
+// Garder « Plus de détails » ouvert ou fermé quand la fiche se redessine ('toggle' ne remonte pas : capture).
+$('#editor').addEventListener('toggle', (e) => { if (e.target.id === 'det' && actual) actual._det = e.target.open; }, true);
 function alEditar(e) {
   const t = e.target;
   if (!actual || t.id === 'foto-producto') return;
   if (t.dataset.k) {
     actual[t.dataset.k] = t.type === 'checkbox' ? t.checked : t.value;
-    if (t.dataset.k === 'categoria') { db.prefs.categoria = t.value; guardar(); }
+    if (t.dataset.k === 'categoria') actual._rayon_sug = false;
+  } else if (t.dataset.sec) {
+    // Nouvelle section : la sous-section est à choisir dans sa liste.
+    if (seccionDe(actual.categoria) !== t.value) actual.categoria = '';
+    actual._seccion = t.value;
+    actual._rayon_sug = false;
+    return pintarEditor();
   } else if (t.dataset.c) {
     const i = Number(t.closest('.comp').dataset.i);
     const comp = actual.componentes[i];
@@ -858,6 +893,7 @@ $('#editor').addEventListener('click', (e) => {
     guardarActual();
   } else if (t.id === 'corregir') {
     actual._modo = 'edicion';
+    if (!actual.categoria) actual._det = true;
     if (actual._origen === 'scan') actual.verificado = true;
     pintarEditor();
   } else if (t.id === 'guardar') {
@@ -1320,7 +1356,7 @@ function pintarLista() {
       return `<li data-gtin="${esc(r.gtin)}">
         <span class="clase clase-${k}">${k}</span>
         <div class="info"><strong>${esc(r.nombre || 'Sans nom')}</strong>
-          <span>${esc(r.marca)}${r.marca ? ' · ' : ''}${esc(labelDe(CATEGORIAS, r.categoria))} · ${r.sin_envase ? 'vrac' : `${r.componentes.length} comp.`}${r.verificado ? ' · vérifié' : ''}${s}</span></div>
+          <span>${esc(r.marca)}${r.marca ? ' · ' : ''}${esc(labelDe(CATEGORIAS, r.categoria) || 'rayon à choisir')} · ${r.sin_envase ? 'vrac' : `${r.componentes.length} comp.`}${r.verificado ? ' · vérifié' : ''}${s}</span></div>
       </li>`;
     }).join('')
     : '<li class="vacio" style="cursor:default;display:block">Aucune référence pour l’instant. Scannez le premier produit.</li>';
@@ -1383,7 +1419,7 @@ $('#imp-json').addEventListener('change', async (e) => {
     let nuevas = 0, actualizadas = 0;
     for (const [gtin, r] of Object.entries(datos.refs)) {
       if (!r?.gtin || !Array.isArray(r.componentes) || !r.off) continue;
-      if (ALIAS_CATEGORIAS[r.categoria]) r.categoria = ALIAS_CATEGORIAS[r.categoria];
+      r.categoria = normalizarRayon(r.categoria);
       const previa = db.refs[gtin];
       if (!previa) { db.refs[gtin] = r; nuevas++; }
       else if ((r.actualizado || '') > (previa.actualizado || '')) { db.refs[gtin] = r; actualizadas++; }
@@ -1447,8 +1483,8 @@ function pintarResumen() {
   const barraClases = ['A', 'B', 'C', 'D'].filter((k) => I.clases[k])
     .map((k) => `<div style="flex:${I.clases[k]};background:${colores[k]}" title="${k} : ${I.clases[k]}">${k} ${I.clases[k]}</div>`).join('');
 
-  const filasCat = CATEGORIAS.map((c) => {
-    const sub = indicadores(refs.filter((r) => r.categoria === c.id));
+  const filasCat = [...SECCIONES, { id: '', label: 'Rayon à choisir' }].map((c) => {
+    const sub = indicadores(refs.filter((r) => seccionDe(r.categoria) === c.id));
     if (!sub.n) return '';
     return `<tr><td>${esc(c.label)}</td><td class="num">${sub.n}</td><td class="num">${pct(sub.encontrados, sub.n)} %</td>
       <td class="num">${pct(sub.material, sub.n)} %</td><td class="num">${pct(sub.masa, sub.n)} %</td></tr>`;
