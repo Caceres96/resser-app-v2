@@ -964,7 +964,11 @@ function pintarTicket() {
       acc = boton('retablir', 'Rétablir', 'ghost');
     }
     const clase = l.etat === 'achat' ? 'hecha' : l.etat === 'ignore' ? 'ignoree' : '';
-    return `<div class="linea ${clase}" data-i="${i}"><div class="cab"><span class="lib">${esc(l.libelle)}</span>
+    // Libellé modifiable tant que l'achat n'est pas ajouté : corrige une erreur de lecture avant qu'elle soit apprise.
+    const lib = l.etat === 'achat'
+      ? `<span class="lib">${esc(l.libelle)}</span>`
+      : `<input class="lib lib-edit" data-li="${i}" value="${esc(l.libelle)}" aria-label="Libellé lu sur le ticket (modifiable)" spellcheck="false">`;
+    return `<div class="linea ${clase}" data-i="${i}"><div class="cab">${lib}
       <span class="prix">${l.qte > 1 ? `${l.qte} × ` : ''}${euros(l.prix)}</span></div>
       <div class="que">${que}</div>${acc ? `<div class="actions">${acc}</div>` : ''}</div>`;
   }).join('');
@@ -991,6 +995,21 @@ $('#ticket-vista').addEventListener('change', (e) => {
   const t = db.tickets.find((x) => x.id === ticketVu);
   if (e.target.id === 'ticket-otro') { ticketVu = e.target.value; pintarTicket(); return; }
   if (t && e.target.dataset.tk) { t[e.target.dataset.tk] = e.target.value.trim(); guardar(); }
+  // Libellé corrigé à la main : on relance le rapprochement de cette ligne avec le catalogue.
+  if (t && e.target.dataset.li != null) {
+    const l = t.lignes[Number(e.target.dataset.li)];
+    const nuevo = e.target.value.replace(/\s+/g, ' ').trim();
+    if (!nuevo || nuevo === l.libelle) return;
+    l.libelle = nuevo;
+    l.corrige = true;
+    if (l.etat !== 'ignore') {
+      const r = apparier(nuevo, catalogo.liste);
+      const top = r.niveau === 'aucun' ? null : r.cands[0];
+      Object.assign(l, { etat: r.niveau, gtin: top?.p.gtin || '', nom: top?.p.nom || '', score: top ? Math.round(top.score * 100) : 0 });
+    }
+    guardar();
+    pintarTicket();
+  }
 });
 
 $('#ticket-vista').addEventListener('click', async (e) => {

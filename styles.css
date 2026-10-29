@@ -36,6 +36,8 @@
 .linea { border: 1px solid var(--line); border-radius: 10px; padding: 10px; margin-bottom: 8px; }
 .linea .cab { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
 .linea .lib { font-family: ui-monospace, Consolas, monospace; font-weight: 600; }
+.linea .lib-edit { flex: 1; min-width: 0; padding: 4px 6px; border: 1px dashed var(--line); background: transparent; font-size: 14px; }
+.linea .lib-edit:focus { border-style: solid; border-color: var(--accent); background: var(--card); }
 .linea .prix { color: var(--muted); font-size: 13px; white-space: nowrap; }
 .linea .que { font-size: 13px; margin: 6px 0; }
 .linea .actions { margin-top: 6px; }
