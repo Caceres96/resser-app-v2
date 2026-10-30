@@ -4,7 +4,7 @@ import {
 } from './reglas.js';
 import { lireTicket, lireTicketPdf, apparier, ajouterLibelle, libellesDe, detecterDate, detecterEnseigne, detecterTotal, requeteRecherche } from './ticket.js';
 
-const APP_VERSION = '1.3.0-beta';
+const APP_VERSION = '1.3.1-beta';
 // Version bêta : stockage séparé de l'application stable (même origine github.io, autre clé),
 // pour qu'une erreur ici ne touche jamais l'inventaire de la version stable.
 const KEY = 'resser.v2';
@@ -18,7 +18,12 @@ const METAS = { producto: 0.85, material: 0.70, masa: 0.50 };
 
 const $ = (s, el = document) => el.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const num = (v) => (v === '' || v == null || isNaN(Number(v)) ? null : Number(v));
+// Accepte la virgule décimale (clavier français) comme le point.
+const num = (v) => {
+  const t = v == null ? '' : String(v).trim().replace(',', '.');
+  return t === '' || isNaN(Number(t)) ? null : Number(t);
+};
+const decimal = (n) => (n == null || n === '' ? '' : String(n).replace('.', ','));
 const pct = (a, b) => (b ? Math.round((a / b) * 100) : 0);
 const g1 = (n) => n.toLocaleString('fr-FR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 const ahora = () => new Date().toISOString();
@@ -780,8 +785,8 @@ function pintarComponente(c, i) {
       <div class="grid">
         <label class="field">Forme<select data-c="forma">${opciones([{ id: '', label: '— sans forme —' }, ...FORMAS], c.forma)}</select></label>
         <label class="field">Matériau<select data-c="material">${opciones([{ id: '', label: '— sans matériau —' }, ...MATERIALES], c.material)}</select></label>
-        <label class="field">Nombre<input data-c="unidades" type="number" min="0" step="1" value="${esc(c.unidades)}"></label>
-        <label class="field">Poids par unité (g)<input data-c="peso_g" type="number" min="0" step="0.1" inputmode="decimal" value="${esc(c.peso_g)}"></label>
+        <label class="field">Nombre<input data-c="unidades" type="number" min="0" step="1" inputmode="numeric" value="${esc(c.unidades)}"></label>
+        <label class="field">Poids par unité (g)<input data-c="peso_g" type="text" inputmode="decimal" autocomplete="off" placeholder="ex. 14,5" value="${esc(decimal(c.peso_g))}"></label>
       </div>
       <details class="mini"><summary>Source du poids${c.peso_fuente ? ` : ${esc(labelDe(PESO_FUENTES, c.peso_fuente))}` : ''}</summary>
         <label class="field">Source du poids<select data-c="peso_fuente">${opciones(PESO_FUENTES, c.peso_fuente)}</select></label>
@@ -805,7 +810,7 @@ function refrescarDerivados() {
   });
   // Champs d'emballage vides en rouge ; « Plus de détails » clignote tant qu'il manque une information.
   document.querySelectorAll('#comps [data-c="forma"], #comps [data-c="material"], #comps [data-c="peso_g"]')
-    .forEach((el) => el.classList.toggle('falta', el.value === ''));
+    .forEach((el) => el.classList.toggle('falta', el.dataset.c === 'peso_g' ? num(el.value) == null : el.value === ''));
   const falta = faltantes(r);
   const det = $('#det');
   if (det) {
