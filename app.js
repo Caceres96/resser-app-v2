@@ -1036,7 +1036,9 @@ function refrescarDerivados() {
     const c = r.componentes[Number(el.dataset.i)];
     const fam = familiaDe(c.material);
     const tri = consignaTri(fam);
-    el.querySelector('[data-foot]').innerHTML = `
+    const pie = el.querySelector('[data-foot]');
+    if (!pie) return; // mode pesée : pas de pied de composant
+    pie.innerHTML = `
       <span><span class="dot" style="background:${FAMILIAS[fam].color}"></span>${esc(FAMILIAS[fam].label)}</span>
       <span class="badge ${tri.id === 'nd' ? 'bad' : ''}">${esc(tri.label)}</span>
       ${c.reciclaje_off ? `<span class="note">OFF : ${esc(c.reciclaje_off.replace('en:', ''))}</span>` : ''}`;
