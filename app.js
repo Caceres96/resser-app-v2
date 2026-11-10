@@ -4,7 +4,7 @@ import {
 } from './reglas.js';
 import { lireTicket, lireTicketPdf, apparier, ajouterLibelle, libellesDe, similarite, detecterDate, detecterEnseigne, detecterTotal, requeteRecherche } from './ticket.js';
 
-const APP_VERSION = '1.10.2-beta';
+const APP_VERSION = '1.11.0-beta';
 // Version bêta : stockage séparé de l'application stable (même origine github.io, autre clé),
 // pour qu'une erreur ici ne touche jamais l'inventaire de la version stable.
 const KEY = 'resser.v2';
@@ -328,6 +328,7 @@ function mostrarTab(id) {
   $('.tabs').hidden = id === 'inicio';
   $('#ir-inicio').hidden = id === 'inicio';
   document.body.classList.toggle('en-inicio', id === 'inicio');
+  if (id === 'inicio') pintarInicio();
   window.scrollTo({ top: 0 });
   document.querySelectorAll('.tabs button').forEach((b) => b.classList.toggle('active', b.dataset.tab === id));
   document.querySelectorAll('.tab').forEach((t) => t.classList.toggle('active', t.id === `tab-${id}`));
@@ -1735,6 +1736,74 @@ function seccionTickets() {
     </div>`;
 }
 
+// ---------- Accueil : sous-titres vivants et raccourcis ----------
+function ticketADeballer() {
+  const t = deballageActivo() || db.tickets[0];
+  if (!t) return null;
+  const n = t.lignes.filter((l) => ['probable', 'aucun'].includes(l.etat)).length;
+  return n ? { t, n } : null;
+}
+function pintarInicio() {
+  contar();
+  const d = ticketADeballer();
+  $('#ini-deballer').hidden = !d;
+  if (d) $('#ini-deballer-sub').textContent = `${d.t.enseigne || 'Dernier ticket'} · ${d.n} ligne(s) à identifier`;
+  const aTraiter = db.tickets.reduce((s, t) => s + t.lignes.filter((l) => ['probable', 'aucun', 'sur'].includes(l.etat)).length, 0);
+  $('#ini-tickets-sub').textContent = db.tickets.length
+    ? `${db.tickets.length} ticket(s)${aTraiter ? ` · ${aTraiter} ligne(s) à traiter` : ' · tout est traité'}`
+    : 'Bilan d’emballages par ticket';
+  const mois = new Date().toISOString().slice(0, 7);
+  const g = db.tickets.filter((t) => String(t.date || '').startsWith(mois)).reduce((s, t) => s + balanceTicket(t).g, 0);
+  $('#ini-syn-sub').textContent = g ? `${poids(g)} d’emballages ce mois` : 'Indicateurs et impact';
+  const n = pendientes().length;
+  $('#ini-equipe-sub').textContent = !db.prefs.nombre ? 'Indiquez votre nom et la clé'
+    : !conectado() ? `${db.prefs.nombre} · non reliée à l’équipe` : n ? `${db.prefs.nombre} · ${n} en attente d’envoi` : `${db.prefs.nombre} · à jour`;
+  $('#ini-version').textContent = `Version ${APP_VERSION} · données ADEME, Open Food Facts, Agribalyse`;
+  // La photo couvre l'en-tête et la portada, puis se fond dans le fond clair.
+  requestAnimationFrame(() => {
+    const p = $('.portada');
+    if (p && document.body.classList.contains('en-inicio')) document.body.style.setProperty('--hero-h', `${Math.round(p.getBoundingClientRect().bottom + window.scrollY + 28)}px`);
+  });
+}
+$('#ini-deballer').addEventListener('click', () => {
+  const d = ticketADeballer();
+  if (!d) return;
+  if (enlaceActivo()) cerrarEnlace();
+  db.prefs.deballage = { ticket: d.t.id };
+  guardar();
+  mostrarTab('escanear');
+  abrirCamara();
+});
+$('#ini-apeser').addEventListener('click', () => { soloAPesar = true; mostrarTab('inventario'); });
+$('#ini-inventaire').addEventListener('click', () => { if (soloAPesar) { soloAPesar = false; pintarLista(); } });
+const abrirEquipo = () => {
+  mostrarTab('escanear');
+  $('#contexto').open = true;
+  $('#contexto').scrollIntoView({ behavior: 'smooth', block: 'start' });
+};
+$('#ini-equipe').addEventListener('click', abrirEquipo);
+$('#ini-perfil').addEventListener('click', abrirEquipo);
+$('#ini-export').addEventListener('click', () => { mostrarTab('inventario'); $('#exp-ref').scrollIntoView({ behavior: 'smooth', block: 'center' }); });
+// Points de collecte depuis l'accueil : choisir d'abord le type de déchet.
+$('#ini-puntos').addEventListener('click', () => {
+  const el = document.createElement('div');
+  el.className = 'asistente puntos';
+  el.setAttribute('role', 'dialog');
+  el.setAttribute('aria-modal', 'true');
+  el.innerHTML = `
+    <div class="asis-cab"><div><span class="note">Points de collecte</span><h2>Que voulez-vous déposer ?</h2></div>
+      <button type="button" class="ghost puntos-cerrar" aria-label="Fermer">✕</button></div>
+    <div class="asis-cuerpo"><div class="menu">${Object.entries(FILIERES).map(([k, f]) => `<button type="button" class="fila-menu" data-puntos="${k}"><span class="txt"><strong>${esc(f.titre)}</strong></span></button>`).join('')}</div></div>`;
+  document.body.append(el);
+  document.body.classList.add('modal-abierto');
+  el.addEventListener('click', (e) => {
+    if (e.target.closest('.puntos-cerrar') || e.target.closest('[data-puntos]')) {
+      el.remove();
+      if (!document.querySelector('.asistente, .exito')) document.body.classList.remove('modal-abierto');
+    }
+  });
+});
+
 // ---------- Déballage : scanner les produits d'un ticket dans n'importe quel ordre ----------
 function deballageActivo() {
   const d = db.prefs.deballage;
@@ -1897,8 +1966,8 @@ window.addEventListener('online', () => sincronizar());
 function contar() {
   $('#count').textContent = $('#count-inicio').textContent = Object.keys(db.refs).length;
   const n = aPesar().length;
-  $('#apeser-inicio').hidden = !n;
-  $('#apeser-inicio').textContent = `${n} à peser`;
+  $('#ini-apeser').hidden = !n;
+  $('#apeser-inicio').textContent = n;
 }
 let soloAPesar = false;
 $('#filtro-apeser').addEventListener('click', () => { soloAPesar = !soloAPesar; pintarLista(); });
@@ -2395,3 +2464,6 @@ if (conectado() && pendientes().length) sincronizar();
 if ('serviceWorker' in navigator && location.protocol !== 'file:') {
   navigator.serviceWorker.register('sw.js').catch(() => {});
 }
+
+// Accueil : sous-titres vivants au démarrage.
+pintarInicio();

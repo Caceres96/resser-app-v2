@@ -441,7 +441,7 @@ input[type="checkbox"], input[type="radio"] { box-shadow: none; width: auto; }
    Voile sombre en haut pour lire le titre ; fondu vers le fond clair sous la première rangée. */
 body.en-inicio { position: relative; }
 body.en-inicio::before {
-  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 300px; z-index: -1; pointer-events: none;
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: var(--hero-h, 300px); z-index: -1; pointer-events: none;
   background:
     linear-gradient(180deg, rgba(20, 16, 8, .55) 0%, rgba(20, 16, 8, .15) 45%, rgba(255, 255, 250, 0) 75%, var(--bg) 100%),
     url('fondo-accueil.jpg') center 30% / cover no-repeat;
@@ -451,3 +451,28 @@ body.en-inicio .brand span { color: rgba(255, 255, 250, .9); }
 body.en-inicio .brand strong { color: #fffffa; text-shadow: 0 1px 3px rgba(0, 0, 0, .4); }
 body.en-inicio .t-ticket { background: rgba(255, 255, 250, .88); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
 body.en-inicio .t-scan, body.en-inicio .t-ticket { box-shadow: 0 6px 18px rgba(0, 0, 0, .28); }
+
+/* 1.11.0 : accueil organisé — portada (photo) puis listes par section */
+.portada .duo { display: grid; grid-template-columns: 1.4fr 1fr; gap: 12px; }
+.portada .tile { min-height: 150px; font-size: 18px; text-align: center; }
+.portada .tile svg { width: 52px; height: 52px; }
+.fila-menu { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; padding: 12px 14px; background: var(--card); color: var(--ink); border: 0; border-radius: 0; font-weight: 400; font-size: 15px; }
+.fila-menu .ic { width: 22px; height: 22px; flex: none; color: var(--accent); }
+.fila-menu .chev { width: 18px; height: 18px; flex: none; color: var(--muted); }
+.fila-menu .txt { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.fila-menu strong { font-weight: 600; }
+.fila-menu small { color: var(--muted); font-size: 13px; }
+.fila-menu .pill { font-style: normal; }
+.fila-menu.urgente .ic { color: var(--terre-texte); }
+.pill.apeser { background: var(--terre); color: var(--blanc); }
+.fila-portada { margin-top: 12px; border-radius: 16px; background: rgba(255, 255, 250, .92); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); box-shadow: 0 6px 18px rgba(0, 0, 0, .25); }
+.menu { background: var(--card); border-radius: 16px; box-shadow: var(--neu-haut); overflow: hidden; }
+.menu .fila-menu + .fila-menu { border-top: 1px solid var(--line); }
+.menu .fila-menu:active { background: var(--soft); }
+.menu-tit { margin: 24px 6px 10px; font-size: 13px; font-weight: 600; color: var(--muted); }
+.pie-inicio { text-align: center; color: var(--muted); font-size: 12px; margin: 24px 0 8px; }
+.perfil-btn { display: none; margin-left: auto; width: 40px; height: 40px; padding: 0; border-radius: 50%; background: transparent; color: #fffffa; border: 1.5px solid rgba(255, 255, 250, .85); }
+.perfil-btn svg { width: 22px; height: 22px; }
+body.en-inicio .perfil-btn { display: grid; place-items: center; }
+.brand { width: 100%; }
+@media (prefers-color-scheme: dark) { .fila-portada { background: rgba(39, 45, 41, .9); } }
