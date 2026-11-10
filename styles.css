@@ -1,31 +1,47 @@
+/* Palette « app2 » : 60 % #FFFFFA (fonds), 30 % #626C66 (structure : en-tête, boutons, onglets),
+   10 % #C57B57 (accent : action principale, onglet actif, repères). Les couleurs de sens
+   (bon / attention / erreur, consignes de tri, familles de matériaux) restent à part. */
 :root {
-  --bg: #f4f6f5;
-  --card: #ffffff;
-  --ink: #1b2421;
-  --muted: #5f6b67;
-  --line: #dde3e1;
-  --accent: #3c3489;
-  --accent-ink: #ffffff;
-  --soft: #eeedfe;
+  --blanc: #fffffa;
+  --sauge: #626c66;
+  --terre: #c57b57;
+  --terre-texte: #9e5a3a; /* terre foncée : lisible en petit texte sur fond clair */
+  --bg: var(--blanc);
+  --card: var(--blanc);
+  --ink: #2a302c;
+  --muted: var(--sauge);
+  --line: #dde1da;
+  --accent: var(--sauge);
+  --accent-ink: var(--blanc);
+  --soft: #eef0ea;
+  --cta: var(--terre);
+  --cta-ink: var(--blanc);
+  --top: var(--sauge);
+  --top-ink: var(--blanc);
   --warn: #b8641a;
   --bad: #b3362b;
-  --good: #2c7a4b;
+  --good: #3f7a52;
   --radius: 12px;
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #111715;
-    --card: #1a2220;
-    --ink: #e7eeeb;
-    --muted: #9aa8a3;
-    --line: #2c3633;
-    --accent: #afa9ec;
-    --accent-ink: #1b1640;
-    --soft: #26213c;
+    --bg: #1f2421;
+    --card: #272d29;
+    --ink: var(--blanc);
+    --muted: #b3bbb5;
+    --line: #3a423d;
+    --accent: #a9b3ac;
+    --accent-ink: #1f2421;
+    --soft: #313833;
+    --terre-texte: #e0a283;
+    --cta: var(--terre);
+    --cta-ink: var(--blanc);
+    --top: #2e3530;
+    --top-ink: var(--blanc);
     --warn: #e09550;
     --bad: #e2675c;
-    --good: #5cbf83;
+    --good: #6fbf8a;
     color-scheme: dark;
   }
 }
@@ -327,3 +343,93 @@ body.modal-abierto { overflow: hidden; }
 .deb .field { margin-bottom: 4px; }
 .deb select { width: 100%; max-width: 100%; }
 .exito-det { font-size: .95rem; opacity: .9; max-width: 32ch; margin: 0 auto 8px; }
+
+/* ---------- Palette app2 (60 / 30 / 10) ---------- */
+.top { background: var(--top); color: var(--top-ink); border-bottom: 3px solid var(--terre); }
+.brand span { color: color-mix(in srgb, var(--top-ink) 75%, transparent); }
+.tabs button { color: color-mix(in srgb, var(--top-ink) 72%, transparent); }
+.tabs button.active { color: var(--top-ink); border-bottom-color: var(--terre); }
+.inicio-btn { background: color-mix(in srgb, var(--top-ink) 16%, transparent); color: var(--top-ink); }
+.beta { background: var(--terre); color: var(--blanc); }
+.card { box-shadow: 0 1px 2px rgba(42, 48, 44, .06); }
+/* Action principale (une par écran) : la touche terre cuite. Texte grand et gras pour le contraste. */
+.primary.grande { background: var(--cta); color: var(--cta-ink); font-size: 19px; font-weight: 700; }
+.enlace { border-left-color: var(--terre); }
+.deb { border-color: var(--terre); }
+.asis-pasos span.hecho { background: var(--terre); }
+.mira::after { background: var(--terre); }
+.balance-total { color: var(--terre-texte); }
+.fiche-dechet h4 { color: var(--ink); }
+input:focus, select:focus, textarea:focus { outline: 2px solid var(--terre); outline-offset: 1px; }
+/* Accueil : scanner = action principale (terre cuite), les autres en nuances de sauge. */
+.t-scan { background: var(--terre); }
+/* Autres tuiles : fond clair (60 %), icône et texte sauge (30 %). */
+.t-ticket, .t-inv, .t-syn, .t-dechets { background: var(--card); color: var(--accent); border: 2px solid var(--line); box-shadow: 0 1px 3px rgba(42, 48, 44, .08); }
+.t-ticket .pill, .t-inv .pill, .t-syn .pill, .t-dechets .pill { background: var(--soft); color: var(--accent); }
+.puntos-n, .puntos-pin { background: var(--sauge); }
+.exito { background: var(--sauge); }
+.exito-check { color: var(--sauge); }
+
+/* ---------- Neumorphisme : menu (tuiles, onglets) et saisie (champs, boutons) ----------
+   Surfaces de la couleur du fond, relief par deux ombres (claire en haut à gauche, sauge en bas à droite).
+   Un liseré léger reste pour la lisibilité des champs. */
+:root {
+  --neu-sombre: rgba(98, 108, 102, .26);
+  --neu-clair: #ffffff;
+  --neu-haut: 6px 6px 14px var(--neu-sombre), -6px -6px 14px var(--neu-clair);
+  --neu-bas: 3px 3px 7px var(--neu-sombre), -3px -3px 7px var(--neu-clair);
+  --neu-creux: inset 3px 3px 7px var(--neu-sombre), inset -3px -3px 7px var(--neu-clair);
+  --verre: rgba(255, 255, 250, .42);
+  --verre-bord: rgba(255, 255, 255, .75);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --neu-sombre: rgba(0, 0, 0, .5);
+    --neu-clair: rgba(255, 255, 255, .06);
+    --verre: rgba(39, 45, 41, .55);
+    --verre-bord: rgba(255, 255, 255, .12);
+  }
+}
+/* Menu */
+.mosaico { gap: 18px; }
+.tile { border: none !important; box-shadow: var(--neu-haut); transition: box-shadow .15s, transform .15s; }
+.tile:active { box-shadow: var(--neu-creux); transform: scale(.98); }
+.t-scan { box-shadow: 6px 6px 14px rgba(197, 123, 87, .45), -6px -6px 14px var(--neu-clair); }
+.tabs { gap: 4px; padding-bottom: 8px; }
+.tabs button { border-radius: 10px; border-bottom: 0; }
+.tabs button.active { background: color-mix(in srgb, var(--top-ink) 14%, transparent); box-shadow: inset 2px 2px 5px rgba(0, 0, 0, .25), inset -2px -2px 5px rgba(255, 255, 255, .12); }
+/* Saisie */
+input, select, textarea { background: var(--bg); border: 1px solid color-mix(in srgb, var(--line) 60%, transparent); border-radius: 10px; box-shadow: var(--neu-creux); }
+input[type="checkbox"], input[type="radio"] { box-shadow: none; width: auto; }
+.secondary, .ghost, .contador button, .choix button { background: var(--bg); border-color: transparent; box-shadow: var(--neu-bas); }
+.primary { box-shadow: 3px 3px 8px var(--neu-sombre), -3px -3px 8px var(--neu-clair); }
+.secondary:active, .ghost:active, .primary:active, .contador button:active, .choix button:active { box-shadow: var(--neu-creux); }
+.lnk, .lnk:active { box-shadow: none; background: none; }
+.comp, .linea { border-color: transparent; box-shadow: var(--neu-bas); }
+
+/* ---------- Glassmorphism : graphiques et indicateurs (Synthèse, bilan du ticket) ----------
+   Le verre a besoin d'un fond coloré derrière lui : halos sauge et terre cuite sous la Synthèse. */
+#tab-resumen { position: relative; isolation: isolate; }
+#tab-resumen::before {
+  content: ''; position: absolute; inset: -16px; z-index: -1; pointer-events: none;
+  background:
+    radial-gradient(40% 30% at 15% 10%, rgba(197, 123, 87, .55), transparent 70%),
+    radial-gradient(45% 35% at 90% 35%, rgba(98, 108, 102, .5), transparent 70%),
+    radial-gradient(40% 30% at 20% 75%, rgba(98, 108, 102, .45), transparent 70%),
+    radial-gradient(35% 25% at 85% 90%, rgba(197, 123, 87, .45), transparent 70%);
+}
+#tab-resumen .card, #tab-resumen .kpi, .balance {
+  background: var(--verre);
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
+  backdrop-filter: blur(16px) saturate(140%);
+  border: 1px solid var(--verre-bord);
+  box-shadow: 0 8px 24px rgba(42, 48, 44, .12);
+}
+#tab-resumen .kpi { background: color-mix(in srgb, var(--verre) 70%, transparent); }
+#tab-resumen .bar, .balance .bar { background: rgba(98, 108, 102, .18); box-shadow: inset 0 1px 2px rgba(42, 48, 44, .15); }
+.balance { position: relative; overflow: hidden; }
+.balance::before {
+  content: ''; position: absolute; inset: 0; z-index: -1; pointer-events: none;
+  background: radial-gradient(60% 80% at 100% 0%, rgba(197, 123, 87, .3), transparent 70%), radial-gradient(60% 80% at 0% 100%, rgba(98, 108, 102, .3), transparent 70%);
+}
+.balance { isolation: isolate; }
