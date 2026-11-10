@@ -275,3 +275,16 @@ body.modal-abierto { overflow: hidden; }
 @keyframes exito-pop { 0% { transform: scale(.4); } 70% { transform: scale(1.12); } 100% { transform: scale(1); } }
 @keyframes exito-cuenta { from { transform: scaleX(1); } to { transform: scaleX(0); } }
 @media (prefers-reduced-motion: reduce) { .exito, .exito-check { animation: none; } }
+
+/* Accueil : grandes tuiles colorées, faciles à toucher (inspiré des téléphones simplifiés). */
+.mosaico { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; min-height: calc(100dvh - 120px); }
+.tile { flex-direction: column; gap: 12px; border: none; border-radius: 18px; padding: 18px 8px; min-height: 150px; color: #fff; font-size: 20px; font-weight: 700; box-shadow: 0 2px 6px rgba(0, 0, 0, .15); }
+.tile svg { width: 64px; height: 64px; }
+.tile:active { transform: scale(.97); }
+.tile span { display: flex; align-items: center; gap: 6px; }
+.tile .pill { font-style: normal; background: rgba(255, 255, 255, .25); color: #fff; font-size: 14px; padding: 1px 8px; }
+.t-scan { background: #3c3489; }
+.t-ticket { background: #d85a30; }
+.t-inv { background: #2c7a4b; }
+.t-syn { background: #1a73e8; }
+.inicio-btn { padding: 6px; background: var(--soft); color: var(--accent); border-radius: 10px; }

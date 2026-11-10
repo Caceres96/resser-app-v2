@@ -4,7 +4,7 @@ import {
 } from './reglas.js';
 import { lireTicket, lireTicketPdf, apparier, ajouterLibelle, libellesDe, detecterDate, detecterEnseigne, detecterTotal, requeteRecherche } from './ticket.js';
 
-const APP_VERSION = '1.4.1-beta';
+const APP_VERSION = '1.5.0-beta';
 // Version bêta : stockage séparé de l'application stable (même origine github.io, autre clé),
 // pour qu'une erreur ici ne touche jamais l'inventaire de la version stable.
 const KEY = 'resser.v2';
@@ -279,7 +279,13 @@ function filasComp(r) {
 // ---------- Onglets ----------
 
 document.querySelectorAll('.tabs button').forEach((b) => b.addEventListener('click', () => mostrarTab(b.dataset.tab)));
+// Accueil : quatre grandes tuiles ; ailleurs, les onglets et un bouton de retour à l'accueil.
+document.querySelectorAll('[data-ir]').forEach((b) => b.addEventListener('click', () => mostrarTab(b.dataset.ir)));
+$('#ir-inicio').addEventListener('click', () => mostrarTab('inicio'));
 function mostrarTab(id) {
+  $('.tabs').hidden = id === 'inicio';
+  $('#ir-inicio').hidden = id === 'inicio';
+  window.scrollTo({ top: 0 });
   document.querySelectorAll('.tabs button').forEach((b) => b.classList.toggle('active', b.dataset.tab === id));
   document.querySelectorAll('.tab').forEach((t) => t.classList.toggle('active', t.id === `tab-${id}`));
   if (id === 'inventario') pintarLista();
@@ -1567,7 +1573,7 @@ window.addEventListener('online', () => sincronizar());
 
 // ---------- Inventaire ----------
 
-function contar() { $('#count').textContent = Object.keys(db.refs).length; }
+function contar() { $('#count').textContent = $('#count-inicio').textContent = Object.keys(db.refs).length; }
 
 $('#filtro').addEventListener('input', pintarLista);
 function pintarLista() {
