@@ -5,12 +5,12 @@
 // Les caches portent le préfixe « resser-v2- » : la version stable partage la même origine
 // (caceres96.github.io) et ses caches ne doivent jamais être effacés par la bêta.
 const PREFIXE = 'resser-v2-';
-const CACHE = `${PREFIXE}20`;
+const CACHE = `${PREFIXE}21`;
 const SHELL = ['./', 'index.html', 'styles.css', 'app.js', 'reglas.js', 'ticket.js', 'manifest.webmanifest', 'icon.svg', 'agribalyse.json', 'fondo-accueil.jpg'];
 const CDN = /^https:\/\/(cdn|fastly)\.jsdelivr\.net\/npm\/(barcode-detector|zxing-wasm|tesseract\.js|tesseract\.js-core|@tesseract\.js-data\/fra|pdfjs-dist)@/;
 
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).catch(() => {}));
+  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL.map((u) => new Request(u, { cache: 'reload' })))).catch(() => {}));
   self.skipWaiting();
 });
 
@@ -30,7 +30,7 @@ self.addEventListener('fetch', (e) => {
           if (res.ok) { const copia = res.clone(); caches.open(CACHE).then((c) => c.put(e.request, copia)); }
           return res;
         })
-        .catch(() => caches.match(e.request)),
+        .catch(() => caches.match(e.request, { ignoreSearch: true })),
     );
   } else if (CDN.test(url.href)) {
     e.respondWith(
