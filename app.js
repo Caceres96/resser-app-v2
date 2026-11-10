@@ -4,7 +4,7 @@ import {
 } from './reglas.js';
 import { lireTicket, lireTicketPdf, apparier, ajouterLibelle, libellesDe, detecterDate, detecterEnseigne, detecterTotal, requeteRecherche } from './ticket.js';
 
-const APP_VERSION = '1.3.1-beta';
+const APP_VERSION = '1.4.0-beta';
 // Version bêta : stockage séparé de l'application stable (même origine github.io, autre clé),
 // pour qu'une erreur ici ne touche jamais l'inventaire de la version stable.
 const KEY = 'resser.v2';
@@ -601,11 +601,11 @@ function abrirEditor(r, origen = 'scan') {
     const NOTE_NOM = 'Produit choisi d’après le libellé du ticket (suggestion Open Food Facts) : vérifier la variante et l’emballage.';
     if (e.viaNom && !String(actual.obs || '').includes(NOTE_NOM)) actual.obs = [actual.obs, NOTE_NOM].filter(Boolean).join(' ');
   }
-  // Après un scan, vue rapide s'il y a déjà un emballage décrit ; sinon on passe directement à la saisie.
-  const describe = actual.sin_envase || actual.componentes.length > 0;
-  actual._modo = origen === 'scan' && describe ? 'rapido' : 'edicion';
+  // Après un scan : produit déjà vérifié et complet → vue rapide (un geste) ; sinon assistant pas à pas.
+  const listo = certeza(actual).tono === 'good' && !faltantes(actual).length;
+  actual._modo = origen !== 'scan' ? 'edicion' : listo ? 'rapido' : 'asistente';
   // Saisie depuis un scan : la personne a le produit en main.
-  if (actual._modo === 'edicion' && origen === 'scan') actual.verificado = true;
+  if (actual._modo === 'asistente') { actual._paso = 1; actual.verificado = true; }
   pintarEditor();
   $('#editor').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
@@ -681,7 +681,9 @@ function avisoVersionNueva(r) {
 function pintarEditor() {
   const r = actual;
   const ed = $('#editor');
+  document.body.classList.remove('modal-abierto');
   if (!r) { ed.innerHTML = ''; return; }
+  if (r._modo === 'asistente') return pintarAsistente(r, ed);
   if (r._modo === 'rapido') return pintarRapido(r, ed);
   const enOFF = r.off.estado === 'encontrado';
   const sinCodigo = r.off.estado === 'sin_codigo';
@@ -777,6 +779,109 @@ function pintarRapido(r, ed) {
     </div>`;
 }
 
+// ---------- Assistant pas à pas après un scan (fenêtre plein écran) ----------
+
+const PASOS = ['Produit', 'Type de produit', 'Emballage', 'Enregistrer'];
+
+// Ce qui empêche de passer à l'étape suivante (vide = on peut continuer).
+function bloqueoPaso(r, paso) {
+  if (paso === 2) {
+    if (!r.nombre.trim()) return 'Indiquez le nom du produit.';
+    if (!r.categoria) return 'Choisissez la catégorie (section puis sous-section).';
+  }
+  if (paso === 3 && !r.sin_envase) {
+    if (!r.componentes.length) return 'Indiquez combien d’éléments compte l’emballage.';
+    if (r.componentes.some((c) => !c.forma || !c.material)) return 'Choisissez la forme et le matériau de chaque élément.';
+    if (r.componentes.some((c) => num(c.peso_g) == null)) return 'Indiquez le poids de chaque élément : il sert à calculer les déchets générés.';
+  }
+  return '';
+}
+
+function pasoProducto(r) {
+  const foto = r.photo || r._photo;
+  const identificado = r.off.estado === 'encontrado' || !!r._equipo || !!db.refs[r.gtin];
+  return `
+    ${cabecera(r)}
+    ${foto ? `<img class="foto" src="${esc(foto)}" alt="Photo du produit">` : ''}
+    ${identificado
+      ? '<p class="asis-txt">Produit trouvé. Vérifiez que c’est bien celui que vous avez en main.</p>'
+      : '<p class="asis-txt">Ce produit n’est dans aucune base. Prenez-le en photo, face avant, emballage visible : l’équipe pourra le compléter.</p>'}
+    <label class="button ${foto || identificado ? 'secondary' : 'primary grande'} wide">${foto ? 'Reprendre la photo' : 'Prendre une photo'}<input id="foto-producto" type="file" accept="image/*" capture="environment" hidden></label>`;
+}
+
+function pasoTipo(r) {
+  const sec = seccionDe(r.categoria) || r._seccion || '';
+  return `
+    <p class="asis-txt">Ce qui est écrit sur l’emballage.</p>
+    <label class="field">Nom du produit<input data-k="nombre" value="${esc(r.nombre)}" placeholder="ex. Eau minérale naturelle"></label>
+    <label class="field">Catégorie<select data-sec="1">${opciones([{ id: '', label: '— à choisir —' }, ...SECCIONES], sec)}</select></label>
+    <label class="field">Sous-catégorie${r._rayon_sug && r.categoria ? ' <span class="badge">suggérée</span>' : ''}<select data-k="categoria">${opciones([{ id: '', label: '— à choisir —' }, ...CATEGORIAS.filter((c) => c.seccion === sec)], r.categoria)}</select></label>
+    <div class="grid">
+      <label class="field">Marque<input data-k="marca" value="${esc(r.marca)}" placeholder="ex. Evian"></label>
+      <label class="field">Taille / format<input data-k="cantidad" value="${esc(r.cantidad)}" placeholder="ex. 1,5 L · 500 g · taille M"></label>
+    </div>
+    <label class="field">Supermarché<input data-k="enseigne" list="enseignes" value="${esc(r.enseigne)}" placeholder="ex. Carrefour"></label>`;
+}
+
+function pasoEmbalaje(r) {
+  const n = r.componentes.length;
+  const deBase = r.componentes.some((c) => c.origen === 'off' || c.origen === 'off_corregido');
+  return `
+    <p class="asis-txt"><strong>Le produit a-t-il un emballage ?</strong></p>
+    <div class="row choix">
+      <button type="button" data-envase="si" class="${r.sin_envase ? 'secondary' : 'primary'}">Oui</button>
+      <button type="button" data-envase="no" class="${r.sin_envase ? 'primary' : 'secondary'}">Non (vrac)</button>
+    </div>
+    <div id="bloque-comps" ${r.sin_envase ? 'hidden' : ''}>
+      <p class="asis-txt"><strong>Combien d’éléments ?</strong></p>
+      <div class="contador">
+        <button type="button" id="menos" class="secondary" aria-label="Un élément de moins" ${n <= 1 ? 'disabled' : ''}>−</button>
+        <span class="n">${n}</span>
+        <button type="button" id="mas" class="secondary" aria-label="Un élément de plus">+</button>
+      </div>
+      <p class="note">Exemple : une bouteille d’eau a 3 éléments : la bouteille, le bouchon et l’étiquette.</p>
+      ${deBase ? '<p class="note">Pré-rempli d’après la base : vérifiez sur le produit et complétez le poids.</p>' : ''}
+      <div id="comps">${r.componentes.map(pintarComponente).join('')}</div>
+    </div>`;
+}
+
+function pasoGuardar(r) {
+  const envases = r.sin_envase
+    ? '<li><span><strong>Vendu sans emballage</strong></span></li>'
+    : r.componentes.map(filaEnvase).join('');
+  return `
+    ${cabecera(r)}
+    <ul class="envases">${envases}</ul>
+    <p class="note">${esc([labelRayon(r.categoria), r.enseigne].filter(Boolean).join(' · '))}</p>
+    ${db.prefs.nombre ? '' : '<label class="field">Votre nom (accompagne les produits envoyés à l’équipe)<input id="asis-nombre" autocomplete="name" placeholder="ex. Cristian"></label>'}
+    <div class="enlaces"><button type="button" id="detallado" class="lnk">Fiche détaillée (équipe)</button></div>`;
+}
+
+function pintarAsistente(r, ed) {
+  const paso = r._paso || 1;
+  const cuerpo = [pasoProducto, pasoTipo, pasoEmbalaje, pasoGuardar][paso - 1](r);
+  const ultimo = paso === PASOS.length;
+  ed.innerHTML = `
+    <div class="asistente" role="dialog" aria-modal="true" aria-label="Étape ${paso} sur ${PASOS.length} : ${PASOS[paso - 1]}">
+      <div class="asis-cab">
+        <div><span class="note">Étape ${paso}/${PASOS.length}</span><h2>${PASOS[paso - 1]}</h2></div>
+        <button type="button" id="descartar" class="ghost" aria-label="Fermer">✕</button>
+      </div>
+      <div class="asis-pasos">${PASOS.map((_, i) => `<span class="${i < paso ? 'hecho' : ''}"></span>`).join('')}</div>
+      <div class="asis-cuerpo">${cuerpo}</div>
+      <div class="asis-pie">
+        <p id="asis-error" class="sin-peso" role="alert"></p>
+        <div class="row">
+          ${paso > 1 ? '<button type="button" id="ant" class="ghost">Retour</button>' : ''}
+          <button type="button" id="${ultimo ? 'guardar' : 'sig'}" class="primary grande" style="flex:1">${ultimo ? 'Enregistrer' : paso === 1 && !(r.photo || r._photo) && r.off.estado !== 'encontrado' && !r._equipo ? 'Passer sans photo' : 'Suivant'}</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.classList.add('modal-abierto');
+  refrescarDerivados();
+  ed.querySelector('.asis-cuerpo').scrollTop = 0;
+}
+
 function pintarComponente(c, i) {
   return `
     <div class="comp" data-i="${i}">
@@ -798,7 +903,7 @@ function pintarComponente(c, i) {
 function refrescarDerivados() {
   const r = actual;
   if (!r) return;
-  $('#bloque-comps').hidden = !!r.sin_envase;
+  if ($('#bloque-comps')) $('#bloque-comps').hidden = !!r.sin_envase;
   document.querySelectorAll('#comps .comp').forEach((el) => {
     const c = r.componentes[Number(el.dataset.i)];
     const fam = familiaDe(c.material);
@@ -817,6 +922,9 @@ function refrescarDerivados() {
     det.classList.toggle('alerta', falta.length > 0);
     $('#det-resumen').textContent = falta.length ? `à compléter : ${falta.join(', ')}` : 'rayon, produit, achat, qualité';
   }
+  const err = $('#asis-error');
+  if (err && !bloqueoPaso(r, r._paso)) err.textContent = '';
+  if (!$('#clase-sug')) return;
   const sug = claseSugerida(r);
   $('#clase-sug').innerHTML = `<span class="clase clase-${sug}">${sug}</span>`;
   const m = masaPlastico(r);
@@ -884,11 +992,13 @@ function alEditar(e) {
   refrescarDerivados();
 }
 
+const componenteVacio = () => ({ forma: '', material: '', unidades: 1, peso_g: null, peso_fuente: '', reciclaje_off: '', origen: 'manual' });
+
 $('#editor').addEventListener('click', (e) => {
   const t = e.target.closest('button');
   if (!t || !actual) return;
   if (t.id === 'add-comp') {
-    actual.componentes.push({ forma: '', material: '', unidades: 1, peso_g: null, peso_fuente: '', reciclaje_off: '', origen: 'manual' });
+    actual.componentes.push(componenteVacio());
     pintarEditor();
   } else if (t.dataset.del != null) {
     actual.componentes.splice(Number(t.dataset.del), 1);
@@ -897,11 +1007,43 @@ $('#editor').addEventListener('click', (e) => {
     actual.verificado = true;
     guardarActual();
   } else if (t.id === 'corregir') {
-    actual._modo = 'edicion';
-    if (!actual.categoria) actual._det = true;
+    actual._modo = 'asistente';
+    actual._paso = 1;
     if (actual._origen === 'scan') actual.verificado = true;
     pintarEditor();
+  } else if (t.id === 'sig') {
+    const motivo = bloqueoPaso(actual, actual._paso);
+    if (motivo) {
+      $('#asis-error').textContent = motivo;
+      document.querySelectorAll('.asistente [data-k="nombre"], .asistente [data-k="categoria"]').forEach((el) => el.classList.toggle('falta', el.value === ''));
+      return;
+    }
+    actual._paso++;
+    pintarEditor();
+  } else if (t.id === 'ant') {
+    actual._paso--;
+    pintarEditor();
+  } else if (t.dataset.envase) {
+    actual.sin_envase = t.dataset.envase === 'no';
+    if (!actual.sin_envase && !actual.componentes.length) actual.componentes.push(componenteVacio());
+    pintarEditor();
+  } else if (t.id === 'mas') {
+    actual.componentes.push(componenteVacio());
+    pintarEditor();
+  } else if (t.id === 'menos') {
+    actual.componentes.pop();
+    pintarEditor();
+  } else if (t.id === 'detallado') {
+    actual._modo = 'edicion';
+    pintarEditor();
   } else if (t.id === 'guardar') {
+    const campo = $('#asis-nombre');
+    if (campo) {
+      if (!campo.value.trim()) { $('#asis-error').textContent = 'Indiquez votre nom.'; return; }
+      db.prefs.nombre = campo.value.trim();
+      $('#cfg-nombre').value = db.prefs.nombre;
+      resumirContexto();
+    }
     guardarActual();
   } else if (t.id === 'usar-equipo') {
     abrirEditor(desdeEquipo(actual._nuevo, actual._nuevoPhoto), actual._origen);
@@ -941,6 +1083,12 @@ function guardarActual() {
   actual.saisi_par = db.prefs.nombre || actual.saisi_par || '';
   actual.sync = 'pendiente';
   const gtin = actual.gtin;
+  // Mémoire du dernier produit saisi : son supermarché est proposé pour le suivant.
+  if (actual.enseigne && db.prefs.contexto) {
+    db.prefs.contexto.enseigne = actual.enseigne;
+    $('#ctx-enseigne').value = actual.enseigne;
+    resumirContexto();
+  }
   db.refs[gtin] = actual;
   guardar();
   contar();
