@@ -412,11 +412,10 @@ input[type="checkbox"], input[type="radio"] { box-shadow: none; width: auto; }
 #tab-resumen { position: relative; isolation: isolate; }
 #tab-resumen::before {
   content: ''; position: absolute; inset: -16px; z-index: -1; pointer-events: none;
+  /* Halos sauge seulement : la terre cuite en haut et en bas de page gênait. */
   background:
-    radial-gradient(40% 30% at 15% 10%, rgba(197, 123, 87, .55), transparent 70%),
-    radial-gradient(45% 35% at 90% 35%, rgba(98, 108, 102, .5), transparent 70%),
-    radial-gradient(40% 30% at 20% 75%, rgba(98, 108, 102, .45), transparent 70%),
-    radial-gradient(35% 25% at 85% 90%, rgba(197, 123, 87, .45), transparent 70%);
+    radial-gradient(45% 30% at 90% 25%, rgba(98, 108, 102, .4), transparent 70%),
+    radial-gradient(45% 30% at 10% 60%, rgba(98, 108, 102, .32), transparent 70%);
 }
 #tab-resumen .card, #tab-resumen .kpi, .balance {
   background: var(--verre);
