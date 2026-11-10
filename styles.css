@@ -432,3 +432,7 @@ input[type="checkbox"], input[type="radio"] { box-shadow: none; width: auto; }
   background: radial-gradient(60% 80% at 100% 0%, rgba(197, 123, 87, .3), transparent 70%), radial-gradient(60% 80% at 0% 100%, rgba(98, 108, 102, .3), transparent 70%);
 }
 .balance { isolation: isolate; }
+
+/* 1.10.0 : poids à compléter (« À peser ») */
+.tile .pill.apeser { background: var(--terre); color: var(--blanc); font-style: normal; }
+#lista .info .sin-peso { display: block; font-size: 12px; }

@@ -4,7 +4,7 @@ import {
 } from './reglas.js';
 import { lireTicket, lireTicketPdf, apparier, ajouterLibelle, libellesDe, similarite, detecterDate, detecterEnseigne, detecterTotal, requeteRecherche } from './ticket.js';
 
-const APP_VERSION = '1.9.2-beta';
+const APP_VERSION = '1.10.0-beta';
 // Version bêta : stockage séparé de l'application stable (même origine github.io, autre clé),
 // pour qu'une erreur ici ne touche jamais l'inventaire de la version stable.
 const KEY = 'resser.v2';
@@ -654,6 +654,17 @@ function abrirEditor(r, origen = 'scan') {
   // Déballage d'un ticket : la ligne la plus ressemblante est proposée (à confirmer).
   const deb = !e && origen === 'scan' && deballageActivo();
   if (deb) { actual._deb = lineaProbable(deb, actual); actual._debAuto = actual._deb != null; }
+  // Produit enregistré dont seul le poids manque (« À peser ») : on va droit aux poids, sans compter d'achat.
+  const soloPeso = db.refs[actual.gtin] && pesoPendiente(actual) && faltantes(actual).every((f) => f === 'poids');
+  if (soloPeso && (origen === 'scan' || origen === 'pesee')) {
+    actual._modo = 'pesee';
+    actual._origen = 'liste';
+    actual._scanPesee = origen === 'scan';
+    actual._deb = null;
+    pintarEditor();
+    $('#editor').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    return;
+  }
   // Après un scan : produit déjà vérifié et complet → vue rapide (un geste) ; sinon assistant pas à pas.
   const listo = certeza(actual).tono === 'good' && !faltantes(actual).length;
   actual._modo = origen !== 'scan' ? 'edicion' : listo ? 'rapido' : 'asistente';
@@ -699,6 +710,10 @@ function cabecera(r) {
     </div>`;
 }
 
+// Poids d'au moins un élément encore inconnu (produit pas encore consommé, « À peser »).
+function pesoPendiente(r) { return !r.sin_envase && (r.componentes || []).some((c) => num(c.peso_g) == null); }
+function aPesar() { return Object.values(db.refs).filter(pesoPendiente); }
+
 // Informations encore nécessaires sur l'emballage et le rayon. Le poids sert à calculer les déchets générés.
 function faltantes(r) {
   const f = [];
@@ -738,6 +753,7 @@ function pintarEditor() {
   if (!r) { ed.innerHTML = ''; return; }
   if (r._modo === 'asistente') return pintarAsistente(r, ed);
   if (r._modo === 'rapido') return pintarRapido(r, ed);
+  if (r._modo === 'pesee') return pintarPesee(r, ed);
   const enOFF = r.off.estado === 'encontrado';
   const sinCodigo = r.off.estado === 'sin_codigo';
   const base = BASES.find((b) => b.id === r.off.base) || BASES[0];
@@ -812,6 +828,30 @@ function pintarEditor() {
   refrescarDerivados();
 }
 
+// Pesée différée : l'emballage est vide, on saisit les poids qui manquent.
+function pintarPesee(r, ed) {
+  const filas = r.componentes.map((c, i) => (num(c.peso_g) != null && !c._aPeser ? '' : `
+    <div class="comp" data-i="${i}">
+      <label class="field">${esc(labelForma(c.forma))} · ${esc(labelMaterial(c.material))}${num(c.unidades) > 1 ? ` (×${c.unidades})` : ''} — poids par unité (g)
+        <input data-c="peso_g" type="text" inputmode="decimal" autocomplete="off" placeholder="ex. 14,5" value="${esc(decimal(c.peso_g))}">
+      </label>
+      <input type="hidden" data-c="peso_fuente" value="${esc(c.peso_fuente || '')}">
+    </div>`)).join('');
+  ed.innerHTML = `
+    <div class="card rapido">
+      ${cabecera(r)}
+      <h3 style="margin-top:12px">Poids à compléter</h3>
+      <p class="note">Pesez chaque élément vide et propre (balance de cuisine).</p>
+      <div id="comps">${filas}</div>
+      <p id="asis-error" class="sin-peso" role="alert"></p>
+      <button type="button" id="guardar-peso" class="primary grande wide">Enregistrer le poids</button>
+      <div class="enlaces">
+        ${r._scanPesee ? '<button type="button" id="nueva-compra" class="lnk">C’est un nouvel achat</button>' : ''}
+        <button type="button" id="descartar" class="lnk">Annuler</button>
+      </div>
+    </div>`;
+}
+
 // Vue rapide après un scan : le produit, la certitude, les emballages et leur bac ; un geste pour confirmer.
 function pintarRapido(r, ed) {
   const foto = r.photo || r._photo;
@@ -847,7 +887,7 @@ function bloqueoPaso(r, paso) {
   if (paso === 3 && !r.sin_envase) {
     if (!r.componentes.length) return 'Indiquez combien d’éléments compte l’emballage.';
     if (r.componentes.some((c) => !c.forma || !c.material)) return 'Choisissez la forme et le matériau de chaque élément.';
-    if (r.componentes.some((c) => num(c.peso_g) == null)) return 'Indiquez le poids de chaque élément : il sert à calculer les déchets générés.';
+    if (!r._pesarDespues && r.componentes.some((c) => num(c.peso_g) == null)) return 'Indiquez le poids de chaque élément, ou « Peser plus tard » si l’emballage n’est pas encore vide.';
   }
   return '';
 }
@@ -924,6 +964,9 @@ function pasoEmbalaje(r) {
       <p class="note">Exemple : une bouteille d’eau a 3 éléments : la bouteille, le bouchon et l’étiquette.</p>
       ${deBase ? '<p class="note">Pré-rempli d’après la base : vérifiez sur le produit et complétez le poids.</p>' : ''}
       <div id="comps">${r.componentes.map(pintarComponente).join('')}</div>
+      ${r.componentes.some((c) => num(c.peso_g) == null) ? `
+        <button type="button" id="pesar-despues" class="secondary wide">Peser plus tard</button>
+        <p class="note">Produit pas encore consommé ? Enregistrez-le sans le poids : il ira dans « À peser » et vous le pèserez quand l’emballage sera vide.</p>` : ''}
     </div>`;
 }
 
@@ -935,6 +978,7 @@ function pasoGuardar(r) {
     ${cabecera(r)}
     ${bloqueDeballage(r)}
     <ul class="envases">${envases}</ul>
+    ${pesoPendiente(r) ? '<p class="note pend-sync">Poids à compléter : le produit ira dans « À peser » (Inventaire). Pesez l’emballage une fois vide.</p>' : ''}
     ${botonesPuntos(r)}
     <p class="note">${esc([labelRayon(r.categoria), r.enseigne].filter(Boolean).join(' · '))}</p>
     ${db.prefs.nombre ? '' : '<label class="field">Votre nom (accompagne les produits envoyés à l’équipe)<input id="asis-nombre" autocomplete="name" placeholder="ex. Cristian"></label>'}
@@ -1061,6 +1105,7 @@ function alEditar(e) {
   if (t.id === 'deb-linea') {
     actual._deb = t.value === '' ? null : Number(t.value);
     actual._debAuto = false;
+    actual._debManual = true;
     $('#deb-nota').textContent = notaDeballage(actual);
     return;
   }
@@ -1076,11 +1121,13 @@ function alEditar(e) {
   } else if (t.dataset.c) {
     const i = Number(t.closest('.comp').dataset.i);
     const comp = actual.componentes[i];
+    if (actual._modo === 'pesee' && t.dataset.c === 'peso_g') comp._aPeser = true;
     comp[t.dataset.c] = ['unidades', 'peso_g'].includes(t.dataset.c) ? num(t.value) : t.value;
     // Un poids saisi à la main sans source est considéré comme pesé par l'équipe.
     if (t.dataset.c === 'peso_g' && comp.peso_g != null && !comp.peso_fuente) {
       comp.peso_fuente = 'medido_resser';
-      t.closest('.comp').querySelector('[data-c="peso_fuente"]').value = 'medido_resser';
+      const sel = t.closest('.comp').querySelector('[data-c="peso_fuente"]');
+      if (sel) sel.value = 'medido_resser';
     }
     if (comp.origen === 'off') comp.origen = 'off_corregido';
   }
@@ -1098,6 +1145,10 @@ $('#editor').addEventListener('click', (e) => {
   } else if (t.dataset.del != null) {
     actual.componentes.splice(Number(t.dataset.del), 1);
     pintarEditor();
+  } else if (t.id === 'guardar-peso') {
+    if (pesoPendiente(actual)) { $('#asis-error').textContent = 'Indiquez le poids de chaque élément.'; return; }
+    actual.componentes.forEach((c) => delete c._aPeser);
+    guardarActual();
   } else if (t.id === 'confirmar') {
     actual.verificado = true;
     guardarActual();
@@ -1114,6 +1165,21 @@ $('#editor').addEventListener('click', (e) => {
       return;
     }
     actual._paso++;
+    pintarEditor();
+  } else if (t.id === 'pesar-despues') {
+    actual._pesarDespues = true;
+    const motivo = bloqueoPaso(actual, 3);
+    if (motivo) { actual._pesarDespues = false; $('#asis-error').textContent = motivo; return; }
+    actual._paso = 4;
+    pintarEditor();
+  } else if (t.id === 'nueva-compra') {
+    // Scan d'un produit « à peser » qui est en fait un nouvel achat : parcours normal.
+    actual._origen = 'scan';
+    const deb = !enlaceActivo() && deballageActivo();
+    if (deb) { actual._deb = lineaProbable(deb, actual); actual._debAuto = actual._deb != null; }
+    actual._modo = 'asistente';
+    actual._paso = 1;
+    actual.verificado = true;
     pintarEditor();
   } else if (t.id === 'ant') {
     actual._paso--;
@@ -1224,7 +1290,7 @@ function guardarActual() {
   sincronizar([gtin]);
   window.scrollTo({ top: 0 });
   // Confirmation bien visible pendant 5 s, puis on enchaîne (ticket, ou caméra pour le produit suivant).
-  const detalle = !deb ? '' : lineaDeb
+  const detalle = !deb ? (pesoPendiente(db.refs[gtin]) ? 'Poids à compléter : retrouvez-le dans « À peser » (Inventaire).' : '') : lineaDeb
     ? `Ligne du ticket cochée : « ${lineaDeb.libelle} ». ${resteDeb ? `Encore ${resteDeb} ligne(s) à déballer.` : 'Tout le ticket est déballé !'}`
     : `Achat hors ticket. Encore ${resteDeb} ligne(s) à déballer.`;
   mostrarExito(nomGuardado, () => {
@@ -1605,12 +1671,12 @@ async function agregarCompra(t, i) {
 function poids(g) { return g < 1000 ? `${Math.round(g)} g` : `${String(Math.round(g / 10) / 100).replace('.', ',')} kg`; }
 function balanceTicket(t) {
   const lignes = t.lignes.filter((l) => l.etat !== 'ignore');
-  const b = { n: lignes.length, cubiertas: 0, g: 0, prix: 0, elems: 0, tri: {}, fam: {}, co2: 0, co2n: 0 };
+  const b = { n: lignes.length, pesar: 0, cubiertas: 0, g: 0, prix: 0, elems: 0, tri: {}, fam: {}, co2: 0, co2n: 0 };
   lignes.forEach((l) => {
     const r = ['achat', 'sur'].includes(l.etat) && db.refs[l.gtin];
     if (!r) return;
     const comps = r.sin_envase ? [] : r.componentes || [];
-    if (!r.sin_envase && (!comps.length || comps.some((c) => num(c.peso_g) == null))) return;
+    if (!r.sin_envase && (!comps.length || comps.some((c) => num(c.peso_g) == null))) { if (pesoPendiente(r)) b.pesar++; return; }
     const q = l.qte || 1;
     b.cubiertas++;
     b.prix += l.prix || 0;
@@ -1631,7 +1697,7 @@ function pintarBalance(t) {
   if (!b.n) return '';
   if (!b.cubiertas) {
     return `<div class="balance"><div class="field-lbl">Emballages de ce ticket</div>
-      <p class="note">Pas encore calculable : identifiez les articles et le poids de leurs emballages.</p></div>`;
+      <p class="note">Pas encore calculable : identifiez les articles et le poids de leurs emballages.${b.pesar ? ` ${b.pesar} en attente de pesée.` : ''}</p></div>`;
   }
   const tri = ['jaune', 'verre', 'om', 'nd'].filter((k) => b.tri[k]).map((k) => `<span class="tri tri-${k}">${TRI_CORTO[k]} · ${poids(b.tri[k])}</span>`).join('');
   const fam = Object.entries(b.fam).sort((x, y) => y[1] - x[1])
@@ -1643,7 +1709,7 @@ function pintarBalance(t) {
       <div class="balance-tri">${tri}</div>
       <p class="note">${b.elems} élément(s) d’emballage${b.prix ? ` · ${poids((b.g / b.prix) * 10)} par 10 € d’achats` : ''}${b.co2n ? ` · ${dec(b.co2, 1)} kg CO2e pour ${b.co2n} aliment(s) (Agribalyse)` : ''}</p>
       <div class="bar avance"><div style="flex:${b.cubiertas};background:var(--good)"></div><div style="flex:${b.n - b.cubiertas}"></div></div>
-      <p class="note">Calculé sur ${b.cubiertas} article(s) sur ${b.n}${b.cubiertas < b.n ? ' : identifiez les autres pour compléter le bilan.' : ' : bilan complet.'}</p>
+      <p class="note">Calculé sur ${b.cubiertas} article(s) sur ${b.n}${b.pesar ? ` · ${b.pesar} en attente de pesée` : ''}${b.cubiertas + b.pesar < b.n ? ' · identifiez les autres pour compléter le bilan.' : b.pesar ? '.' : ' : bilan complet.'}</p>
       ${fam ? `<details class="mini"><summary>Détail par matériau</summary><div class="tabla"><table><tbody>${fam}</tbody></table></div></details>` : ''}
     </div>`;
 }
@@ -1692,6 +1758,8 @@ const notaDeballage = (r) => (r._deb == null
 function bloqueDeballage(r) {
   const t = r._origen === 'scan' && !enlaceActivo() && deballageActivo();
   if (!t) return '';
+  // Produit inconnu au scan : la ligne est proposée dès que son nom est saisi.
+  if (r._deb == null && !r._debManual && r.nombre) { r._deb = lineaProbable(t, r); r._debAuto = r._deb != null; }
   const pend = pendientesTicket(t);
   return `
     <div class="deb">
@@ -1823,12 +1891,25 @@ window.addEventListener('online', () => sincronizar());
 
 // ---------- Inventaire ----------
 
-function contar() { $('#count').textContent = $('#count-inicio').textContent = Object.keys(db.refs).length; }
+function contar() {
+  $('#count').textContent = $('#count-inicio').textContent = Object.keys(db.refs).length;
+  const n = aPesar().length;
+  $('#apeser-inicio').hidden = !n;
+  $('#apeser-inicio').textContent = `${n} à peser`;
+}
+let soloAPesar = false;
+$('#filtro-apeser').addEventListener('click', () => { soloAPesar = !soloAPesar; pintarLista(); });
 
 $('#filtro').addEventListener('input', pintarLista);
 function pintarLista() {
   const q = $('#filtro').value.trim().toLowerCase();
+  const nAp = aPesar().length;
+  if (!nAp) soloAPesar = false;
+  $('#filtro-apeser').hidden = !nAp;
+  $('#filtro-apeser').textContent = soloAPesar ? 'Voir toutes les références' : `À peser (${nAp})`;
+  $('#filtro-apeser').classList.toggle('alerta', !soloAPesar);
   const refs = Object.values(db.refs)
+    .filter((r) => !soloAPesar || pesoPendiente(r))
     .filter((r) => !q || `${r.nombre} ${r.marca} ${r.gtin} ${r.libelle_ticket || ''}`.toLowerCase().includes(q))
     .sort((a, b) => b.actualizado.localeCompare(a.actualizado));
   const conSync = conectado();
@@ -1839,7 +1920,7 @@ function pintarLista() {
       return `<li data-gtin="${esc(r.gtin)}">
         <span class="clase clase-${k}">${k}</span>
         <div class="info"><strong>${esc(r.nombre || 'Sans nom')}</strong>
-          <span>${esc(r.marca)}${r.marca ? ' · ' : ''}${esc(labelDe(CATEGORIAS, r.categoria) || 'rayon à choisir')} · ${r.sin_envase ? 'vrac' : `${r.componentes.length} comp.`}${r.verificado ? ' · vérifié' : ''}${s}</span></div>
+          <span>${esc(r.marca)}${r.marca ? ' · ' : ''}${esc(labelDe(CATEGORIAS, r.categoria) || 'rayon à choisir')} · ${r.sin_envase ? 'vrac' : `${r.componentes.length} comp.`}${r.verificado ? ' · vérifié' : ''}${s}</span>${pesoPendiente(r) ? '<span class="sin-peso">à peser</span>' : ''}</div>
       </li>`;
     }).join('')
     : '<li class="vacio" style="cursor:default;display:block">Aucune référence pour l’instant. Scannez le premier produit.</li>';
@@ -1851,7 +1932,8 @@ $('#lista').addEventListener('click', (e) => {
   if (!li) return;
   mostrarTab('escanear');
   $('#gtin').value = li.dataset.gtin.startsWith('SC-') ? '' : li.dataset.gtin;
-  abrirEditor(structuredClone(db.refs[li.dataset.gtin]), 'liste');
+  const ref = structuredClone(db.refs[li.dataset.gtin]);
+  abrirEditor(ref, pesoPendiente(ref) ? 'pesee' : 'liste');
   verificarEquipo(li.dataset.gtin);
 });
 

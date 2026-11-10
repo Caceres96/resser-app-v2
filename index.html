@@ -42,6 +42,7 @@
         <button type="button" class="tile t-inv" data-ir="inventario">
           <svg viewBox="0 0 64 64" aria-hidden="true"><path d="M10 22 32 10l22 12v22L32 56 10 44z" fill="none" stroke="currentColor" stroke-width="4" stroke-linejoin="round"/><path d="M10 22l22 12 22-12M32 34v22" fill="none" stroke="currentColor" stroke-width="4" stroke-linejoin="round"/></svg>
           <span>Inventaire <em id="count-inicio" class="pill">0</em></span>
+          <em id="apeser-inicio" class="pill apeser" hidden></em>
         </button>
         <button type="button" class="tile t-syn" data-ir="resumen">
           <svg viewBox="0 0 64 64" aria-hidden="true"><path d="M10 54h44" stroke="currentColor" stroke-width="4" stroke-linecap="round"/><rect x="14" y="32" width="8" height="18" rx="2" fill="currentColor"/><rect x="28" y="20" width="8" height="30" rx="2" fill="currentColor"/><rect x="42" y="10" width="8" height="40" rx="2" fill="currentColor"/></svg>
@@ -138,6 +139,7 @@
         <div class="row">
           <input id="filtro" type="search" placeholder="Filtrer par nom, marque, libellé ou code">
         </div>
+        <button type="button" id="filtro-apeser" class="secondary wide" hidden></button>
         <div class="actions">
           <button type="button" id="exp-ref" class="secondary">CSV références</button>
           <button type="button" id="exp-comp" class="secondary">CSV composants</button>
