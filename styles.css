@@ -262,3 +262,16 @@ body.modal-abierto { overflow: hidden; }
 .contador { display: flex; align-items: center; justify-content: center; gap: 22px; margin: 6px 0; }
 .contador button { width: 52px; height: 52px; font-size: 26px; border-radius: 50%; padding: 0; }
 .contador .n { font-size: 30px; font-weight: 700; min-width: 40px; text-align: center; }
+
+/* Confirmation d'enregistrement : plein écran vert pendant 5 s. */
+.exito { position: fixed; inset: 0; z-index: 30; background: #2c7a4b; color: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 24px; text-align: center; animation: exito-in .25s ease-out; }
+.exito-check { width: 110px; height: 110px; border-radius: 50%; background: #fff; color: #2c7a4b; font-size: 68px; font-weight: 800; display: grid; place-items: center; animation: exito-pop .4s ease-out; }
+.exito h2 { margin: 10px 0 0; font-size: 28px; }
+.exito p { margin: 0; font-size: 18px; opacity: .95; max-width: 30ch; overflow-wrap: anywhere; }
+.exito-barra { width: min(260px, 80%); height: 6px; border-radius: 3px; background: rgba(255, 255, 255, .3); overflow: hidden; margin-top: 18px; }
+.exito-barra > div { height: 100%; background: #fff; transform-origin: left; animation: exito-cuenta linear forwards; }
+.exito-sig { margin-top: 14px; background: rgba(255, 255, 255, .18); color: #fff; border: 1px solid rgba(255, 255, 255, .6); font-size: 16px; padding: 12px 22px; }
+@keyframes exito-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes exito-pop { 0% { transform: scale(.4); } 70% { transform: scale(1.12); } 100% { transform: scale(1); } }
+@keyframes exito-cuenta { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+@media (prefers-reduced-motion: reduce) { .exito, .exito-check { animation: none; } }

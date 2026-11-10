@@ -4,7 +4,7 @@ import {
 } from './reglas.js';
 import { lireTicket, lireTicketPdf, apparier, ajouterLibelle, libellesDe, detecterDate, detecterEnseigne, detecterTotal, requeteRecherche } from './ticket.js';
 
-const APP_VERSION = '1.4.0-beta';
+const APP_VERSION = '1.4.1-beta';
 // Version bêta : stockage séparé de l'application stable (même origine github.io, autre clé),
 // pour qu'une erreur ici ne touche jamais l'inventaire de la version stable.
 const KEY = 'resser.v2';
@@ -1092,7 +1092,7 @@ function guardarActual() {
   db.refs[gtin] = actual;
   guardar();
   contar();
-  toast(`Enregistré · ${actual.nombre || gtin}`);
+  const nomGuardado = actual.nombre || gtin;
   const lie = enlaceActivo();
   if (lie && origenGuardado === 'scan') cerrarEnlace(gtin, actual.nombre);
   actual = null;
@@ -1101,10 +1101,41 @@ function guardarActual() {
   $('#manual').hidden = true;
   estado('');
   sincronizar([gtin]);
-  if (lie && db.refs[gtin]) return mostrarTab('ticket');
-  // Enchaîner : la caméra se rouvre pour le produit suivant.
-  if (viaCamara && origenGuardado === 'scan') abrirCamara();
-  window.scrollTo({ top: 0, behavior: 'smooth' });
+  window.scrollTo({ top: 0 });
+  // Confirmation bien visible pendant 5 s, puis on enchaîne (ticket, ou caméra pour le produit suivant).
+  mostrarExito(nomGuardado, () => {
+    if (lie && db.refs[gtin]) mostrarTab('ticket');
+    else if (viaCamara && origenGuardado === 'scan') abrirCamara();
+  });
+}
+
+const DUREE_EXITO = 5000;
+let exito = null;
+function mostrarExito(nom, despues) {
+  cerrarExito();
+  if (navigator.vibrate) navigator.vibrate([80, 60, 80]);
+  const el = document.createElement('div');
+  el.className = 'exito';
+  el.setAttribute('role', 'alertdialog');
+  el.setAttribute('aria-live', 'assertive');
+  el.innerHTML = `
+    <div class="exito-check" aria-hidden="true">✓</div>
+    <h2>Produit enregistré !</h2>
+    <p>${esc(nom)}</p>
+    <div class="exito-barra"><div style="animation-duration:${DUREE_EXITO}ms"></div></div>
+    <button type="button" class="exito-sig">Continuer</button>`;
+  document.body.append(el);
+  document.body.classList.add('modal-abierto');
+  const fin = () => { if (exito?.el !== el) return; cerrarExito(); despues(); };
+  el.querySelector('.exito-sig').addEventListener('click', fin);
+  exito = { el, t: setTimeout(fin, DUREE_EXITO) };
+}
+function cerrarExito() {
+  if (!exito) return;
+  clearTimeout(exito.t);
+  exito.el.remove();
+  exito = null;
+  document.body.classList.remove('modal-abierto');
 }
 
 // ---------- Tickets de caisse ----------
