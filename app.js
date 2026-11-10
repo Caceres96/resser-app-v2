@@ -4,7 +4,7 @@ import {
 } from './reglas.js';
 import { lireTicket, lireTicketPdf, apparier, ajouterLibelle, libellesDe, similarite, detecterDate, detecterEnseigne, detecterTotal, requeteRecherche } from './ticket.js';
 
-const APP_VERSION = '1.12.0-beta';
+const APP_VERSION = '1.13.0-beta';
 // Version bêta : stockage séparé de l'application stable (même origine github.io, autre clé),
 // pour qu'une erreur ici ne touche jamais l'inventaire de la version stable.
 const KEY = 'resser.v2';
@@ -1819,7 +1819,7 @@ $('#ini-deballer').addEventListener('click', () => {
   abrirCamara();
 });
 $('#ini-apeser').addEventListener('click', () => { soloAPesar = true; mostrarTab('inventario'); });
-$('#ini-inventaire').addEventListener('click', () => { if (soloAPesar) { soloAPesar = false; pintarLista(); } });
+$('#ini-inventaire').addEventListener('click', () => { if (soloAPesar || filtroSec !== null) { soloAPesar = false; filtroSec = null; pintarLista(); } });
 const abrirEquipo = () => {
   mostrarTab('escanear');
   $('#contexto').open = true;
@@ -2018,6 +2018,47 @@ let soloAPesar = false;
 $('#filtro-apeser').addEventListener('click', () => { soloAPesar = !soloAPesar; pintarLista(); });
 
 $('#filtro').addEventListener('input', pintarLista);
+
+// ---------- Inventaire rangé par catégorie : mosaïque des sections + liste groupée ----------
+const ICONOS_SEC = {
+  alimentation: 'M12 8c-1.2-2-3.3-2.8-5.3-2C3.8 7.2 3.7 12 5.6 15.6 6.8 17.9 8.6 20.4 11 19.6h2c2.4.8 4.2-1.7 5.4-4 1.9-3.6 1.8-8.4-1.1-9.6-2-.8-4.1 0-5.3 2zM12 8c0-2.2 1.2-4 3.5-4.5',
+  hygiene: 'M9 10h6v10a1 1 0 0 1-1 1h-4a1 1 0 0 1-1-1zM11 10V6h2v4M11 6H8.5M12 6V3h3',
+  maison: 'M3 11l9-7 9 7M5 9.5V20h14V9.5M10 20v-6h4v6',
+  bebe: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM9 10h.01M15 10h.01M9 14.5c1.6 1.6 4.4 1.6 6 0',
+  animaux_vegetal: 'M5 20c0-9 5.5-15 15-15 0 9.5-6 15-15 15zM5 20l9-9',
+  mode: 'M8.5 3L3 6l2 4.5 3-1.2V21h8V9.3l3 1.2L21 6l-5.5-3c-.4 1.8-1.8 3-3.5 3s-3.1-1.2-3.5-3z',
+  equipement: 'M14.5 4a5 5 0 0 0-4.6 7L4 16.9 7.1 20l5.9-5.9a5 5 0 0 0 7-4.6l-3 3-3-.9-.9-3z',
+  '': 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM9.6 9.2a2.5 2.5 0 0 1 4.8.8c0 1.8-2.4 2.1-2.4 3.8M12 17h.01',
+};
+const SEC_CORTO = {
+  alimentation: 'Alimentation', hygiene: 'Hygiène et beauté', maison: 'Maison', bebe: 'Bébé et enfant',
+  animaux_vegetal: 'Animaux et végétal', mode: 'Mode', equipement: 'Équipement et loisirs', '': 'À classer',
+};
+const iconoSec = (id) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${ICONOS_SEC[id] ?? ICONOS_SEC['']}"/></svg>`;
+let filtroSec = null; // null = toutes ; '' = à classer ; sinon id de section
+
+function pintarMosaico(base) {
+  const n = {};
+  base.forEach((r) => { const k = seccionDe(r.categoria); n[k] = (n[k] || 0) + 1; });
+  const ids = [...SECCIONES.map((x) => x.id), ...(n[''] || filtroSec === '' ? [''] : [])];
+  $('#mosaico').hidden = !Object.keys(db.refs).length;
+  $('#mosaico').innerHTML = `<div class="mos-grid">${ids.map((id) => `
+    <button type="button" class="mos${filtroSec === id ? ' activo' : ''}${id === '' ? ' a-classer' : ''}" data-sec="${id}"${!n[id] && filtroSec !== id ? ' disabled' : ''} aria-pressed="${filtroSec === id}">
+      <span class="mos-ic">${iconoSec(id)}</span><span class="mos-lbl">${SEC_CORTO[id]}</span><span class="mos-n">${n[id] || 0}</span>
+    </button>`).join('')}</div>
+    ${filtroSec !== null ? '<button type="button" class="lnk" data-sec-tout>‹ Toutes les catégories</button>' : ''}`;
+}
+$('#mosaico').addEventListener('click', (e) => {
+  if (e.target.closest('[data-sec-tout]')) filtroSec = null;
+  else {
+    const b = e.target.closest('[data-sec]');
+    if (!b || b.disabled) return;
+    filtroSec = filtroSec === b.dataset.sec ? null : b.dataset.sec;
+  }
+  pintarLista();
+  $('#mosaico').scrollIntoView({ behavior: 'smooth', block: 'start' });
+});
+
 function pintarLista() {
   const q = $('#filtro').value.trim().toLowerCase();
   const nAp = aPesar().length;
@@ -2025,22 +2066,35 @@ function pintarLista() {
   $('#filtro-apeser').hidden = !nAp;
   $('#filtro-apeser').textContent = soloAPesar ? 'Voir toutes les références' : `À peser (${nAp})`;
   $('#filtro-apeser').classList.toggle('alerta', !soloAPesar);
-  const refs = Object.values(db.refs)
+  const base = Object.values(db.refs)
     .filter((r) => !soloAPesar || porPesar(r))
     .filter((r) => !q || `${r.nombre} ${r.marca} ${r.gtin} ${r.libelle_ticket || ''}`.toLowerCase().includes(q))
     .sort((a, b) => b.actualizado.localeCompare(a.actualizado));
+  pintarMosaico(base);
+  const refs = filtroSec === null ? base : base.filter((r) => seccionDe(r.categoria) === filtroSec);
+  // Groupes : sections (vue complète) ou sous-sections (une section choisie), dans l'ordre des rayons.
+  const grupos = filtroSec === null
+    ? [...SECCIONES.map((x) => ({ id: x.id, label: x.label, ic: x.id, f: (r) => seccionDe(r.categoria) === x.id })),
+      { id: '', label: 'À classer : rayon à choisir', ic: '', f: (r) => !seccionDe(r.categoria) }]
+    : filtroSec === ''
+      ? [{ id: '', label: 'À classer : rayon à choisir', ic: '', f: () => true }]
+      : CATEGORIAS.filter((c) => c.seccion === filtroSec).map((c) => ({ id: c.id, label: c.label, ic: filtroSec, f: (r) => r.categoria === c.id }));
   const conSync = conectado();
-  $('#lista').innerHTML = refs.length
-    ? refs.map((r) => {
+  const fila = (r) => {
       const k = claseFinal(r);
       const s = !conSync ? '' : r.sync === 'ok' ? ' · <span class="ok-sync">dans la feuille</span>' : ' · <span class="pend-sync">en attente</span>';
       return `<li data-gtin="${esc(r.gtin)}">
         <span class="clase clase-${k}">${k}</span>
         <div class="info"><strong>${esc(r.nombre || 'Sans nom')}</strong>
-          <span>${esc(r.marca)}${r.marca ? ' · ' : ''}${esc(labelDe(CATEGORIAS, r.categoria) || 'rayon à choisir')} · ${r.sin_envase ? 'vrac' : `${r.componentes.length} comp.`}${r.verificado ? ' · vérifié' : ''}${s}</span>${pesoPendiente(r) ? '<span class="sin-peso">à peser</span>' : porPesar(r) ? '<span class="estime">poids estimé · à peser</span>' : ''}</div>
+          <span>${esc(r.marca)}${r.marca ? ' · ' : ''}${filtroSec === null ? `${esc(labelDe(CATEGORIAS, r.categoria) || 'rayon à choisir')} · ` : ''}${r.sin_envase ? 'vrac' : `${r.componentes.length} comp.`}${r.verificado ? ' · vérifié' : ''}${s}</span>${pesoPendiente(r) ? '<span class="sin-peso">à peser</span>' : porPesar(r) ? '<span class="estime">poids estimé · à peser</span>' : ''}</div>
       </li>`;
+  };
+  $('#lista').innerHTML = refs.length
+    ? grupos.map((g) => {
+      const del = refs.filter(g.f);
+      return del.length ? `<li class="grupo"><span class="grupo-ic">${iconoSec(g.ic)}</span><span class="grupo-lbl">${esc(g.label)}</span><em>${del.length}</em></li>${del.map(fila).join('')}` : '';
     }).join('')
-    : '<li class="vacio" style="cursor:default;display:block">Aucune référence pour l’instant. Scannez le premier produit.</li>';
+    : `<li class="vacio" style="cursor:default;display:block">${Object.keys(db.refs).length ? 'Aucune référence ici.' : 'Aucune référence pour l’instant. Scannez le premier produit.'}</li>`;
   resumirSync();
 }
 

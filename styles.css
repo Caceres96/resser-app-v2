@@ -491,3 +491,30 @@ body.en-inicio .perfil-btn { display: grid; place-items: center; }
 .contador.unidades input { width: 64px; text-align: center; font-weight: 700; color: var(--ink); }
 .estime { color: var(--terre-texte); font-style: italic; }
 #lista .info .estime { display: block; font-size: 12px; }
+
+/* 1.13.0 : inventaire rangé par catégorie (mosaïque + groupes) */
+.mos-cat { margin-bottom: 14px; }
+.mos-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.mos {
+  display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 8px; text-align: left;
+  min-height: 62px; padding: 10px 12px; border-radius: 16px; border: 1px solid transparent;
+  background: var(--card); color: var(--ink); font-weight: 600; font-size: 14px; line-height: 1.2;
+  box-shadow: 5px 5px 12px var(--neu-sombre), -5px -5px 12px var(--neu-haut);
+}
+.mos-ic { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 11px; background: color-mix(in srgb, var(--sauge) 14%, transparent); color: var(--sauge); }
+.mos-ic svg { width: 22px; height: 22px; }
+.mos-lbl { min-width: 0; overflow-wrap: anywhere; }
+.mos-n { font-size: 13px; font-weight: 700; color: var(--muted); }
+.mos.activo { border-color: var(--terre); box-shadow: inset 3px 3px 8px var(--neu-sombre), inset -3px -3px 8px var(--neu-haut); }
+.mos.activo .mos-ic { background: var(--terre); color: var(--blanc); }
+.mos.activo .mos-n { color: var(--terre-texte); }
+.mos.a-classer .mos-ic { background: color-mix(in srgb, var(--warn) 16%, transparent); color: var(--warn); }
+.mos:disabled { opacity: .45; box-shadow: none; border-color: var(--line); cursor: default; }
+.mos-cat .lnk { margin-top: 10px; }
+.lista li.grupo { background: none; border: 0; padding: 12px 2px 4px; margin: 0; cursor: default; gap: 8px; font-weight: 700; color: var(--ink); }
+.lista li.grupo:first-child { padding-top: 0; }
+.grupo-ic { display: grid; place-items: center; width: 26px; height: 26px; color: var(--sauge); }
+.grupo-ic svg { width: 20px; height: 20px; }
+.grupo-lbl { flex: 1; min-width: 0; }
+.lista li.grupo em { font-style: normal; font-size: 13px; color: var(--muted); }
+@media (prefers-color-scheme: dark) { .mos-ic, .grupo-ic { color: var(--accent); } }

@@ -9,7 +9,7 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icon.svg" type="image/svg+xml">
   <!-- ?v= : à changer à chaque version, sinon certains navigateurs (appli Google sur iPhone) gardent l'ancien CSS 10 min -->
-  <link rel="stylesheet" href="styles.css?v=1.12.0">
+  <link rel="stylesheet" href="styles.css?v=1.13.0">
 </head>
 <body class="en-inicio">
   <header class="top">
@@ -135,6 +135,7 @@
     </section>
 
     <section id="tab-inventario" class="tab">
+      <div id="mosaico" class="mos-cat" hidden></div>
       <div class="card">
         <strong>Feuille de l'équipe</strong> <span id="sync-resumen" class="note"></span>
         <div class="actions">
@@ -164,6 +165,6 @@
   <datalist id="enseignes"></datalist>
   <datalist id="communes"></datalist>
   <div id="toast" role="status" aria-live="polite"></div>
-  <script type="module" src="app.js?v=1.12.0"></script>
+  <script type="module" src="app.js?v=1.13.0"></script>
 </body>
 </html>
