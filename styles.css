@@ -318,3 +318,12 @@ body.modal-abierto { overflow: hidden; }
 .puntos-n, .puntos-pin { flex: none; width: 26px; height: 26px; border-radius: 50%; background: #0f766e; color: #fff; font-weight: 700; font-size: 13px; display: grid; place-items: center; }
 .puntos-pin { border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0, 0, 0, .35); }
 .puntos-btns { justify-content: flex-start; align-items: center; gap: 4px 14px; }
+
+/* 1.9.0 : bilan d'emballages du ticket, déballage */
+.balance { margin: 12px 0; padding: 12px; border-radius: 12px; background: var(--card-2, rgba(127,127,127,.08)); }
+.balance-total { font-size: 2rem; font-weight: 800; line-height: 1.1; margin: 4px 0 8px; }
+.balance-tri { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+.deb { margin: 10px 0; padding: 10px; border: 2px solid var(--accent); border-radius: 12px; }
+.deb .field { margin-bottom: 4px; }
+.deb select { width: 100%; max-width: 100%; }
+.exito-det { font-size: .95rem; opacity: .9; max-width: 32ch; margin: 0 auto 8px; }

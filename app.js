@@ -2,9 +2,9 @@ import {
   CATEGORIAS, SECCIONES, normalizarRayon, seccionDe, labelRayon, sugerirRayon, COMMUNES, ENSEIGNES, BASES, FAMILIAS, MATERIALES, FORMAS, PESO_FUENTES, EXACTITUD,
   CAUSAS, ESTADOS_OFF, familiaDe, labelDe, labelMaterial, labelForma, consignaTri, FUENTE_TRI,
 } from './reglas.js';
-import { lireTicket, lireTicketPdf, apparier, ajouterLibelle, libellesDe, detecterDate, detecterEnseigne, detecterTotal, requeteRecherche } from './ticket.js';
+import { lireTicket, lireTicketPdf, apparier, ajouterLibelle, libellesDe, similarite, detecterDate, detecterEnseigne, detecterTotal, requeteRecherche } from './ticket.js';
 
-const APP_VERSION = '1.8.1-beta';
+const APP_VERSION = '1.9.0-beta';
 // Version bêta : stockage séparé de l'application stable (même origine github.io, autre clé),
 // pour qu'une erreur ici ne touche jamais l'inventaire de la version stable.
 const KEY = 'resser.v2';
@@ -334,6 +334,7 @@ function mostrarTab(id) {
   if (id === 'resumen') pintarResumen();
   if (id === 'ticket') pintarTicket();
   if (id !== 'escanear') cerrarCamara();
+  pintarDeballage();
 }
 
 // ---------- Contexte d'achat et rayon (mémorisés entre deux scans) ----------
@@ -650,6 +651,9 @@ function abrirEditor(r, origen = 'scan') {
     const NOTE_NOM = 'Produit choisi d’après le libellé du ticket (suggestion Open Food Facts) : vérifier la variante et l’emballage.';
     if (e.viaNom && !String(actual.obs || '').includes(NOTE_NOM)) actual.obs = [actual.obs, NOTE_NOM].filter(Boolean).join(' ');
   }
+  // Déballage d'un ticket : la ligne la plus ressemblante est proposée (à confirmer).
+  const deb = !e && origen === 'scan' && deballageActivo();
+  if (deb) { actual._deb = lineaProbable(deb, actual); actual._debAuto = actual._deb != null; }
   // Après un scan : produit déjà vérifié et complet → vue rapide (un geste) ; sinon assistant pas à pas.
   const listo = certeza(actual).tono === 'good' && !faltantes(actual).length;
   actual._modo = origen !== 'scan' ? 'edicion' : listo ? 'rapido' : 'asistente';
@@ -819,6 +823,7 @@ function pintarRapido(r, ed) {
   ed.innerHTML = `${avisoVersionNueva(r)}
     <div class="card rapido">
       ${cabecera(r)}
+      ${bloqueDeballage(r)}
       <ul class="envases">${envases}</ul>
       ${botonesPuntos(r)}
       ${r.categoria ? `<p class="note">Rayon : ${esc(labelRayon(r.categoria))}${r._rayon_sug ? ' (suggéré)' : ''}</p>` : ''}
@@ -852,6 +857,7 @@ function pasoProducto(r) {
   const identificado = r.off.estado === 'encontrado' || !!r._equipo || !!db.refs[r.gtin];
   return `
     ${cabecera(r)}
+    ${bloqueDeballage(r)}
     ${foto ? `<img class="foto" src="${esc(foto)}" alt="Photo du produit">` : ''}
     ${identificado
       ? '<p class="asis-txt">Produit trouvé. Vérifiez que c’est bien celui que vous avez en main.</p>'
@@ -927,6 +933,7 @@ function pasoGuardar(r) {
     : r.componentes.map(filaEnvase).join('');
   return `
     ${cabecera(r)}
+    ${bloqueDeballage(r)}
     <ul class="envases">${envases}</ul>
     ${botonesPuntos(r)}
     <p class="note">${esc([labelRayon(r.categoria), r.enseigne].filter(Boolean).join(' · '))}</p>
@@ -1051,6 +1058,12 @@ function alEditar(e) {
     return;
   }
   if (!actual || t.id === 'foto-producto') return;
+  if (t.id === 'deb-linea') {
+    actual._deb = t.value === '' ? null : Number(t.value);
+    actual._debAuto = false;
+    $('#deb-nota').textContent = notaDeballage(actual);
+    return;
+  }
   if (t.dataset.k) {
     actual[t.dataset.k] = t.type === 'checkbox' ? t.checked : t.value;
     if (t.dataset.k === 'categoria') actual._rayon_sug = false;
@@ -1169,6 +1182,14 @@ function guardarActual() {
   if (actual._origen === 'scan') actual.achat_pendiente = true;
   actual.exactitud_off = exactitudDeducida(actual);
   const origenGuardado = actual._origen;
+  const deb = origenGuardado === 'scan' && !enlaceActivo() && deballageActivo();
+  const lineaDeb = deb && actual._deb != null ? deb.lignes[actual._deb] : null;
+  if (lineaDeb) {
+    actual.libelle_ticket = ajouterLibelle(actual.libelle_ticket, lineaDeb.libelle);
+    if (deb.date) actual.date_achat = deb.date;
+    if (deb.enseigne) actual.enseigne = deb.enseigne;
+    if (deb.commune) actual.commune = deb.commune;
+  }
   for (const k of Object.keys(actual)) if (k.startsWith('_')) delete actual[k];
   actual.actualizado = ahora();
   actual.version_app = APP_VERSION;
@@ -1188,6 +1209,13 @@ function guardarActual() {
   const nomGuardado = actual.nombre || gtin;
   const lie = enlaceActivo();
   if (lie && origenGuardado === 'scan') cerrarEnlace(gtin, actual.nombre);
+  if (lineaDeb) {
+    Object.assign(lineaDeb, { etat: 'achat', gtin, nom: actual.nombre });
+    catalogo.charge = 0;
+    guardar();
+  }
+  pintarDeballage();
+  const resteDeb = deb ? pendientesTicket(deb).length : null;
   actual = null;
   pintarEditor();
   $('#gtin').value = '';
@@ -1196,15 +1224,19 @@ function guardarActual() {
   sincronizar([gtin]);
   window.scrollTo({ top: 0 });
   // Confirmation bien visible pendant 5 s, puis on enchaîne (ticket, ou caméra pour le produit suivant).
+  const detalle = !deb ? '' : lineaDeb
+    ? `Ligne du ticket cochée : « ${lineaDeb.libelle} ». ${resteDeb ? `Encore ${resteDeb} ligne(s) à déballer.` : 'Tout le ticket est déballé !'}`
+    : `Achat hors ticket. Encore ${resteDeb} ligne(s) à déballer.`;
   mostrarExito(nomGuardado, () => {
+    if (deb && !resteDeb) { terminarDeballage(); mostrarTab('ticket'); return; }
     if (lie && db.refs[gtin]) mostrarTab('ticket');
-    else if (viaCamara && origenGuardado === 'scan') abrirCamara();
-  });
+    else if ((viaCamara || deb) && origenGuardado === 'scan') abrirCamara();
+  }, detalle);
 }
 
 const DUREE_EXITO = 5000;
 let exito = null;
-function mostrarExito(nom, despues) {
+function mostrarExito(nom, despues, detalle = '') {
   cerrarExito();
   if (navigator.vibrate) navigator.vibrate([80, 60, 80]);
   const el = document.createElement('div');
@@ -1215,6 +1247,7 @@ function mostrarExito(nom, despues) {
     <div class="exito-check" aria-hidden="true">✓</div>
     <h2>Produit enregistré !</h2>
     <p>${esc(nom)}</p>
+    ${detalle ? `<p class="exito-det">${esc(detalle)}</p>` : ''}
     <div class="exito-barra"><div style="animation-duration:${DUREE_EXITO}ms"></div></div>
     <button type="button" class="exito-sig">Continuer</button>`;
   document.body.append(el);
@@ -1390,6 +1423,9 @@ function pintarTicket() {
       <h3>${esc(t.enseigne || 'Magasin ?')} · ${esc(fechaCorta(t.date))}</h3>
       <p class="note">${t.lignes.length} articles${t.total != null ? ` · ${euros(t.total)}` : ''} · ${reste ? `${reste} à traiter` : 'tout est traité'}</p>
       <div class="bar avance"><div style="flex:${fait};background:var(--good)"></div><div style="flex:${reste}"></div></div>
+      ${pintarBalance(t)}
+      ${n('probable') + n('aucun') ? `${boton('deballer', db.prefs.deballage?.ticket === t.id ? 'Reprendre le déballage' : 'Déballer mes courses', 'secondary grande wide')}
+        <p class="note">En rangeant vos courses, scannez les produits un par un, dans n’importe quel ordre : l’app trouve la ligne du ticket correspondante.</p>` : ''}
       ${n('sur') ? boton('todos', n('sur') === 1 ? 'Ajouter l’achat reconnu' : `Ajouter les ${n('sur')} achats reconnus`, 'primary grande wide') : ''}
       <details class="mini">
         <summary>${lu ? 'Vérifier la date et le magasin (lus sur une image)' : 'Modifier la date et le magasin'}</summary>
@@ -1440,6 +1476,14 @@ $('#ticket-vista').addEventListener('click', async (e) => {
     pintarTicket();
     return;
   }
+  if (b.dataset.a === 'deballer') {
+    if (enlaceActivo()) cerrarEnlace();
+    db.prefs.deballage = { ticket: t.id };
+    guardar();
+    mostrarTab('escanear');
+    abrirCamara();
+    return;
+  }
   if (b.dataset.a === 'supprimer-ticket') {
     const faits = t.lignes.filter((l) => l.etat === 'achat').length;
     const msg = `Supprimer le ticket ${t.enseigne || ''} du ${fechaCorta(t.date)} de ce téléphone ?`
@@ -1447,6 +1491,7 @@ $('#ticket-vista').addEventListener('click', async (e) => {
 ${faits === 1 ? 'L’achat déjà ajouté reste enregistré' : `Les ${faits} achats déjà ajoutés restent enregistrés`}.` : '');
     if (!confirm(msg)) return;
     if (db.prefs.enlace?.ticket === t.id) cerrarEnlace();
+    if (db.prefs.deballage?.ticket === t.id) terminarDeballage();
     db.tickets = db.tickets.filter((x) => x.id !== t.id);
     ticketVu = db.tickets[0]?.id || null;
     guardar();
@@ -1554,6 +1599,123 @@ async function agregarCompra(t, i) {
   return true;
 }
 
+// ---------- Bilan d'emballages d'un ticket ----------
+// Articles identifiés (ajoutés ou reconnus) dont la fiche est sur le téléphone avec le poids de chaque élément.
+// Poids d'une ligne = Σ (unités × poids) × quantité achetée. Les lignes ignorées sortent du calcul.
+function poids(g) { return g < 1000 ? `${Math.round(g)} g` : `${String(Math.round(g / 10) / 100).replace('.', ',')} kg`; }
+function balanceTicket(t) {
+  const lignes = t.lignes.filter((l) => l.etat !== 'ignore');
+  const b = { n: lignes.length, cubiertas: 0, g: 0, prix: 0, elems: 0, tri: {}, fam: {}, co2: 0, co2n: 0 };
+  lignes.forEach((l) => {
+    const r = ['achat', 'sur'].includes(l.etat) && db.refs[l.gtin];
+    if (!r) return;
+    const comps = r.sin_envase ? [] : r.componentes || [];
+    if (!r.sin_envase && (!comps.length || comps.some((c) => num(c.peso_g) == null))) return;
+    const q = l.qte || 1;
+    b.cubiertas++;
+    b.prix += l.prix || 0;
+    comps.forEach((c) => {
+      const u = (num(c.unidades) ?? 1) * q, g = u * num(c.peso_g), fam = familiaDe(c.material), tri = consignaTri(fam).id;
+      b.g += g;
+      b.elems += u;
+      b.tri[tri] = (b.tri[tri] || 0) + g;
+      b.fam[fam] = (b.fam[fam] || 0) + g;
+    });
+    const v = valoresAgb(r.agribalyse), kg = masaKg(r.cantidad);
+    if (v && kg) { b.co2 += v.co2 * kg * q; b.co2n++; }
+  });
+  return b;
+}
+function pintarBalance(t) {
+  const b = balanceTicket(t);
+  if (!b.n) return '';
+  if (!b.cubiertas) {
+    return `<div class="balance"><div class="field-lbl">Emballages de ce ticket</div>
+      <p class="note">Pas encore calculable : identifiez les articles et le poids de leurs emballages.</p></div>`;
+  }
+  const tri = ['jaune', 'verre', 'om', 'nd'].filter((k) => b.tri[k]).map((k) => `<span class="tri tri-${k}">${TRI_CORTO[k]} · ${poids(b.tri[k])}</span>`).join('');
+  const fam = Object.entries(b.fam).sort((x, y) => y[1] - x[1])
+    .map(([f, g]) => `<tr><td><span class="dot" style="background:${FAMILIAS[f].color}"></span>${esc(FAMILIAS[f].label)}</td><td class="num">${poids(g)}</td><td class="num">${pct(g, b.g)} %</td></tr>`).join('');
+  return `
+    <div class="balance">
+      <div class="field-lbl">Emballages de ce ticket</div>
+      <div class="balance-total">${poids(b.g)}</div>
+      <div class="balance-tri">${tri}</div>
+      <p class="note">${b.elems} élément(s) d’emballage${b.prix ? ` · ${poids((b.g / b.prix) * 10)} par 10 € d’achats` : ''}${b.co2n ? ` · ${dec(b.co2, 1)} kg CO2e pour ${b.co2n} aliment(s) (Agribalyse)` : ''}</p>
+      <div class="bar avance"><div style="flex:${b.cubiertas};background:var(--good)"></div><div style="flex:${b.n - b.cubiertas}"></div></div>
+      <p class="note">Calculé sur ${b.cubiertas} article(s) sur ${b.n}${b.cubiertas < b.n ? ' : identifiez les autres pour compléter le bilan.' : ' : bilan complet.'}</p>
+      ${fam ? `<details class="mini"><summary>Détail par matériau</summary><div class="tabla"><table><tbody>${fam}</tbody></table></div></details>` : ''}
+    </div>`;
+}
+
+// Synthèse : bilan de chaque ticket et total par mois.
+function seccionTickets() {
+  if (!db.tickets.length) return '';
+  const filas = db.tickets.map((t) => ({ t, b: balanceTicket(t) }));
+  const mois = {};
+  filas.forEach(({ t, b }) => { const m = String(t.date || '').slice(0, 7); if (m) { mois[m] ??= { g: 0, c: 0, n: 0 }; mois[m].g += b.g; mois[m].c += b.cubiertas; mois[m].n += b.n; } });
+  const lignes = filas.map(({ t, b }) => `<tr><td>${esc(fechaCorta(t.date))}<br><span class="note">${esc(t.enseigne || '?')}</span></td><td class="num">${b.cubiertas ? poids(b.g) : '—'}</td><td class="num">${b.cubiertas}/${b.n}</td></tr>`).join('');
+  const parMois = Object.entries(mois).sort((x, y) => y[0].localeCompare(x[0]))
+    .map(([m, v]) => `<tr><td>${esc(m)}</td><td class="num">${v.c ? poids(v.g) : '—'}</td><td class="num">${v.c}/${v.n}</td></tr>`).join('');
+  return `
+    <div class="card">
+      <h3>Emballages par ticket</h3>
+      <div class="tabla"><table><thead><tr><th>Ticket</th><th class="num">Emballages</th><th class="num">Articles calculés</th></tr></thead><tbody>${lignes}</tbody></table></div>
+      <div class="tabla" style="margin-top:12px"><table><thead><tr><th>Mois</th><th class="num">Emballages</th><th class="num">Articles calculés</th></tr></thead><tbody>${parMois}</tbody></table></div>
+      <p class="note">Somme des poids d’emballage des articles identifiés (poids par élément × quantité achetée). Tant que des articles restent à identifier, c’est un minimum.</p>
+    </div>`;
+}
+
+// ---------- Déballage : scanner les produits d'un ticket dans n'importe quel ordre ----------
+function deballageActivo() {
+  const d = db.prefs.deballage;
+  return (d && db.tickets.find((x) => x.id === d.ticket)) || null;
+}
+function pendientesTicket(t) { return t.lignes.map((l, i) => ({ l, i })).filter(({ l }) => ['probable', 'aucun', 'sur'].includes(l.etat)); }
+// Ligne la plus ressemblante : même code-barres, sinon libellés déjà appris et nom du produit comparés au libellé.
+function lineaProbable(t, r) {
+  const pend = pendientesTicket(t);
+  const exacta = pend.find(({ l }) => l.gtin && l.gtin === String(r.gtin));
+  if (exacta) return exacta.i;
+  const nom = `${r.nombre || ''} ${r.marca || ''}`.trim();
+  let mejor = null, max = 0;
+  pend.forEach(({ l, i }) => {
+    const sc = Math.max(nom ? similarite(l.libelle, nom) : 0, ...libellesDe(r.libelle_ticket).map((x) => similarite(l.libelle, x)));
+    if (sc > max) { max = sc; mejor = i; }
+  });
+  return max >= 0.4 ? mejor : null;
+}
+const notaDeballage = (r) => (r._deb == null
+  ? 'Achat hors ticket ? Sinon, choisissez sa ligne : son libellé sera appris pour les prochains tickets.'
+  : r._debAuto ? 'Ligne proposée d’après le nom : vérifiez-la. Son libellé sera appris pour les prochains tickets.'
+    : 'Son libellé sera appris pour les prochains tickets.');
+function bloqueDeballage(r) {
+  const t = r._origen === 'scan' && !enlaceActivo() && deballageActivo();
+  if (!t) return '';
+  const pend = pendientesTicket(t);
+  return `
+    <div class="deb">
+      <label class="field">Ligne du ticket${r._debAuto ? ' <span class="badge">proposée</span>' : ''}
+        <select id="deb-linea"><option value="">— aucune (achat hors ticket) —</option>${pend.map(({ l, i }) => `<option value="${i}"${r._deb === i ? ' selected' : ''}>${esc(l.libelle)}${l.prix != null ? ` · ${euros(l.prix)}` : ''}</option>`).join('')}</select>
+      </label>
+      <p class="note" id="deb-nota">${notaDeballage(r)}</p>
+    </div>`;
+}
+function pintarDeballage() {
+  const t = !enlaceActivo() && deballageActivo();
+  $('#deballage').hidden = !t;
+  if (!t) return;
+  $('#deb-ticket').textContent = `${t.enseigne || 'Ticket'} · ${fechaCorta(t.date)}`;
+  const n = pendientesTicket(t).length;
+  $('#deb-reste').textContent = `Scannez vos produits un par un, dans n’importe quel ordre. ${n} ligne(s) restante(s).`;
+}
+function terminarDeballage() {
+  delete db.prefs.deballage;
+  guardar();
+  pintarDeballage();
+}
+$('#deb-fin').addEventListener('click', () => { terminarDeballage(); cerrarCamara(); mostrarTab('ticket'); });
+
 // Ligne inconnue : on scanne le produit ; à l'enregistrement, son libellé de ticket est mémorisé.
 function enlaceActivo() {
   const e = db.prefs.enlace;
@@ -1564,6 +1726,7 @@ function pintarEnlace() {
   const e = enlaceActivo();
   $('#enlace').hidden = !e;
   if (e) $('#enlace-libelle').textContent = e.libelle;
+  if ($('#deballage')) pintarDeballage();
 }
 function abrirEnlace(t, i, extra = {}) {
   db.prefs.enlace = { ticket: t.id, i, ...extra };
@@ -1850,7 +2013,8 @@ function pintarResumen() {
       <div class="tabla"><table><thead><tr><th>Contenant</th><th class="num">Unités</th><th class="num">%</th></tr></thead><tbody>${filasTri}</tbody></table></div>
       <p class="note">${esc(FUENTE_TRI)}</p>
     </div>
-    ${seccionImpacto(refs)}`;
+    ${seccionImpacto(refs)}
+    ${seccionTickets()}`;
 }
 
 // Impact environnemental des références alimentaires : valeur Agribalyse par kg × masse de l'unité de vente.

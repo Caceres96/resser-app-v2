@@ -84,6 +84,11 @@
         <button type="button" id="enlace-annuler" class="ghost">Annuler</button>
       </div>
 
+      <div id="deballage" class="enlace" hidden>
+        <span>Déballage : <strong id="deb-ticket"></strong><br><span class="note" id="deb-reste"></span></span>
+        <button type="button" id="deb-fin" class="ghost">Terminer</button>
+      </div>
+
       <div class="card">
         <div id="botones-scan">
           <button id="camara" type="button" class="primary grande wide">Scanner un code-barres</button>
@@ -112,7 +117,7 @@
     <section id="tab-ticket" class="tab">
       <div class="card">
         <h3>Lire un ticket de caisse</h3>
-        <p class="note">Ticket à plat, bien éclairé et en entier, ou PDF de l'enseigne. Lu sur le téléphone ; ni la photo ni le PDF ne sont gardés.</p>
+        <p class="note">Le plus fiable : le ticket PDF envoyé par l'enseigne (appli ou e-mail), lu sans erreur. Sinon, une photo du ticket à plat, bien éclairé et en entier. Lu sur le téléphone ; ni la photo ni le PDF ne sont gardés.</p>
         <label class="button primary wide">Photographier le ticket<input id="ticket-foto" type="file" accept="image/*" capture="environment" hidden></label>
         <label class="button secondary wide">Choisir dans la galerie ou un PDF<input id="ticket-archivo" type="file" accept="image/*,application/pdf,.pdf" hidden></label>
         <div class="barra-ticket" id="ticket-progreso" hidden><div class="bar"><div id="ticket-barra" style="flex:0;background:var(--accent)"></div><div style="flex:1"></div></div></div>
