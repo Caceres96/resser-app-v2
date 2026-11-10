@@ -4,7 +4,7 @@ import {
 } from './reglas.js';
 import { lireTicket, lireTicketPdf, apparier, ajouterLibelle, libellesDe, detecterDate, detecterEnseigne, detecterTotal, requeteRecherche } from './ticket.js';
 
-const APP_VERSION = '1.7.0-beta';
+const APP_VERSION = '1.8.1-beta';
 // Version bêta : stockage séparé de l'application stable (même origine github.io, autre clé),
 // pour qu'une erreur ici ne touche jamais l'inventaire de la version stable.
 const KEY = 'resser.v2';
@@ -820,6 +820,7 @@ function pintarRapido(r, ed) {
     <div class="card rapido">
       ${cabecera(r)}
       <ul class="envases">${envases}</ul>
+      ${botonesPuntos(r)}
       ${r.categoria ? `<p class="note">Rayon : ${esc(labelRayon(r.categoria))}${r._rayon_sug ? ' (suggéré)' : ''}</p>` : ''}
       ${foto || !nuevo ? '' : '<label class="lnk">Ajouter une photo (produit nouveau pour l’équipe)<input id="foto-producto" type="file" accept="image/*" capture="environment" hidden></label>'}
       <button type="button" id="confirmar" class="primary grande wide">C'est bien ça</button>
@@ -927,6 +928,7 @@ function pasoGuardar(r) {
   return `
     ${cabecera(r)}
     <ul class="envases">${envases}</ul>
+    ${botonesPuntos(r)}
     <p class="note">${esc([labelRayon(r.categoria), r.enseigne].filter(Boolean).join(' · '))}</p>
     ${db.prefs.nombre ? '' : '<label class="field">Votre nom (accompagne les produits envoyés à l’équipe)<input id="asis-nombre" autocomplete="name" placeholder="ex. Cristian"></label>'}
     <div class="enlaces"><button type="button" id="detallado" class="lnk">Fiche détaillée (équipe)</button></div>`;
@@ -1941,7 +1943,8 @@ function pintarFicheDechet(f) {
     <div class="card fiche-dechet">
       <h2>${esc(f.titre)}</h2>
       ${html || '<p class="note">Pas de conseil détaillé pour cet objet : consultez la fiche complète.</p>'}
-      <a class="button primary wide" href="${esc(f.source)}" target="_blank" rel="noopener">Où le déposer près de chez moi (carte ADEME)</a>
+      ${filiereDeFiche(f.source) ? `<button type="button" class="primary wide" data-puntos="${filiereDeFiche(f.source)}">Points de collecte les plus proches</button>` : ''}
+      <a class="button ${filiereDeFiche(f.source) ? 'secondary' : 'primary'} wide" href="${esc(f.source)}" target="_blank" rel="noopener">Voir la fiche et la carte ADEME</a>
       <p class="note">Source : Que faire de mes objets &amp; déchets – ADEME${f.maj ? `, mise à jour le ${esc(f.maj)}` : ''}.</p>
       <button type="button" id="dechet-otro" class="secondary wide">Chercher un autre objet</button>
     </div>`;
@@ -1953,6 +1956,186 @@ $('#dechet-fiche').addEventListener('click', (e) => {
   $('#dechet-q').value = '';
   $('#dechet-q').focus();
 });
+
+// ---------- Points de collecte proches (données des éco-organismes, ADEME) ----------
+// API ouverte (data.pointsapport.ademe.fr) appelée directement depuis le téléphone ; résultats triés par distance.
+// La position est arrondie (~100 m) avant d'être envoyée ; sans géolocalisation : commune du contexte ou code postal.
+
+const PUNTOS_API = 'https://data.pointsapport.ademe.fr/data-fair/api/v1/datasets';
+const FILIERES = {
+  verre: { titre: 'Verre', sets: [['donnees-eo-citeo', 'produitsdechets_acceptes:Verre']] },
+  emballages: { titre: 'Emballages', sets: [['donnees-eo-citeo', 'produitsdechets_acceptes:"Emballage Multimatériaux"']] },
+  papier: { titre: 'Papiers', sets: [['donnees-eo-citeo', 'produitsdechets_acceptes:"Papiers graphiques"']] },
+  textile: { titre: 'Textiles et chaussures', sets: [['zkt20z09p8jl6oix18a5kcte']] },
+  electro: { titre: 'Appareils électriques et électroniques', sets: [['mghu92uuvml6n1ehove2j4fi'], ['5q57wvep499uirkce8ujkfiu']] },
+  piles: { titre: 'Piles et batteries', sets: [['n72t2kwh3s8jc7ox49s6m0hv'], ['d2c972no5p-ai8-aket8di6f']] },
+  meubles: { titre: 'Meubles et literie', sets: [['xxjvy8g9xtz90l9ac1u6ty3c']] },
+  chimiques: { titre: 'Produits chimiques et peintures', sets: [['6t3fv3njj4twubhsmh4rippd']] },
+  pneus: { titre: 'Pneus', sets: [['fkdqwl7xfhimb116m1969iy-']] },
+};
+const TRI_A_FILIERE = { verre: 'verre', jaune: 'emballages' };
+
+// Fiche ADEME (« Autres déchets ») → filière de collecte, d'après son adresse.
+function filiereDeFiche(url) {
+  const u = String(url || '');
+  if (/vetement|textile|chaussure|linge|maroquinerie/.test(u)) return 'textile';
+  if (/pile|batterie/.test(u)) return 'piles';
+  if (/deee|electr|telephone|ecran|informatique|lampe|ampoule|hifi|photo|console/.test(u)) return 'electro';
+  if (/meuble|literie|canape|matelas|siege/.test(u)) return 'meubles';
+  if (/peinture|chimique|solvant|dangereux/.test(u)) return 'chimiques';
+  if (/pneu/.test(u)) return 'pneus';
+  if (/verre/.test(u)) return 'verre';
+  if (/papier/.test(u)) return 'papier';
+  if (/emballage/.test(u)) return 'emballages';
+  return '';
+}
+
+// Position pour la recherche : téléphone, sinon commune du contexte, sinon code postal mémorisé.
+// Renvoie null si rien n'est connu : le panneau demande alors un code postal.
+const redondear = (lat, lon, origen, commune = '') => ({ lat: Math.round(lat * 1000) / 1000, lon: Math.round(lon * 1000) / 1000, origen, commune });
+async function geocodificar(q) {
+  try {
+    const j = await (await fetch(`https://api-adresse.data.gouv.fr/search/?q=${encodeURIComponent(q)}&type=municipality&limit=1`)).json();
+    const f = j.features[0];
+    return redondear(f.geometry.coordinates[1], f.geometry.coordinates[0], `${f.properties.city} (${f.properties.postcode})`, f.properties.city);
+  } catch {
+    return null;
+  }
+}
+function obtenerPosicion() {
+  const sinGps = async () => {
+    const c = db.prefs.contexto?.commune || db.prefs.cp;
+    return c ? geocodificar(c) : null;
+  };
+  if (!navigator.geolocation) return sinGps();
+  return new Promise((ok) => navigator.geolocation.getCurrentPosition(
+    (p) => ok(redondear(p.coords.latitude, p.coords.longitude, 'votre position')),
+    () => ok(sinGps()),
+    { timeout: 8000, maximumAge: 600000 },
+  ));
+}
+
+// Jours de collecte à domicile : service « Mes Déchets » dans la Métropole du Grand Nancy, sinon la collectivité.
+const MES_DECHETS = 'https://mhdd.grandnancy.eu/dechets/ou-et-comment-jeter-mes-dechets';
+function enGrandNancy(pos) {
+  if (pos.commune) return COMMUNES.some((c) => sinAcentos(c) === sinAcentos(pos.commune));
+  const dx = (pos.lon - 6.1844) * 73, dy = (pos.lat - 48.6921) * 111; // km
+  return Math.hypot(dx, dy) < 9;
+}
+const notaRecogida = (pos) => (pos && enGrandNancy(pos)
+  ? `Les jours de collecte à domicile de votre rue : <a href="${MES_DECHETS}" target="_blank" rel="noopener">« Mes Déchets » du Grand Nancy</a>.`
+  : 'Les jours de collecte à domicile : consultez le site de votre commune ou de votre intercommunalité.');
+
+async function buscarPuntos(filiere, pos, rayon = 5000) {
+  const sel = 'nom_de_lorganisme,enseigne_commerciale,type_de_point_de_collecte,produitsdechets_acceptes,adresse_format_ban,horaires_douverture,latitudewgs84,longitudewgs84';
+  const listas = await Promise.all(FILIERES[filiere].sets.map(async ([id, qs]) => {
+    const url = `${PUNTOS_API}/${id}/lines?geo_distance=${pos.lon},${pos.lat},${rayon}&size=8&select=${sel}${qs ? `&qs=${encodeURIComponent(qs)}` : ''}`;
+    try { return (await (await fetch(url)).json()).results || []; } catch { return []; }
+  }));
+  return listas.flat().filter((p) => p.latitudewgs84 != null).sort((a, b) => a._geo_distance - b._geo_distance).slice(0, 8);
+}
+
+const distancia = (m) => (m < 1000 ? `${Math.round(m / 10) * 10} m` : `${String(Math.round(m / 100) / 10).replace('.', ',')} km`);
+
+function cargarLeaflet() {
+  if (window.L) return Promise.resolve(window.L);
+  const css = document.createElement('link');
+  css.rel = 'stylesheet';
+  css.href = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css';
+  document.head.append(css);
+  return cargarScript('https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js').then(() => window.L);
+}
+
+async function abrirPuntos(filiere) {
+  const f = FILIERES[filiere];
+  if (!f) return;
+  const el = document.createElement('div');
+  el.className = 'asistente puntos';
+  el.setAttribute('role', 'dialog');
+  el.setAttribute('aria-modal', 'true');
+  el.innerHTML = `
+    <div class="asis-cab"><div><span class="note">Points de collecte proches</span><h2>${esc(f.titre)}</h2></div>
+      <button type="button" class="ghost puntos-cerrar" aria-label="Fermer">✕</button></div>
+    <div class="asis-cuerpo">
+      <p class="note" id="puntos-estado">Recherche de votre position…</p>
+      <form id="puntos-cp" class="row" hidden>
+        <input id="puntos-cp-q" inputmode="numeric" autocomplete="postal-code" placeholder="Code postal ou commune">
+        <button type="submit" class="primary">Chercher</button>
+      </form>
+      <div id="puntos-mapa" class="puntos-mapa" hidden></div>
+      <ul id="puntos-lista" class="puntos-lista"></ul>
+      <p class="note" id="puntos-nota"></p>
+      <p class="note">Données : points d’apport des éco-organismes (ADEME, data.pointsapport.ademe.fr), toute la France. Carte © contributeurs OpenStreetMap.</p>
+    </div>`;
+  document.body.append(el);
+  document.body.classList.add('modal-abierto');
+  const cerrar = () => { el.remove(); if (!document.querySelector('.asistente, .exito')) document.body.classList.remove('modal-abierto'); };
+  el.querySelector('.puntos-cerrar').addEventListener('click', cerrar);
+  const estadoP = (m) => { el.querySelector('#puntos-estado').textContent = m; };
+
+  // Ni position ni commune : on demande un code postal (mémorisé pour la prochaine fois).
+  let pos = await obtenerPosicion();
+  if (!pos) {
+    estadoP('Indiquez votre code postal (ou votre commune) pour trouver les points les plus proches.');
+    const form = el.querySelector('#puntos-cp');
+    form.hidden = false;
+    el.querySelector('#puntos-cp-q').focus();
+    pos = await new Promise((ok) => form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const q = el.querySelector('#puntos-cp-q').value.trim();
+      if (!q) return;
+      estadoP('Recherche…');
+      const r = await geocodificar(q);
+      if (!r) { estadoP('Code postal ou commune introuvable. Vérifiez la saisie.'); return; }
+      db.prefs.cp = q;
+      guardar();
+      form.hidden = true;
+      ok(r);
+    }));
+  }
+  if (!el.isConnected) return;
+  el.querySelector('#puntos-nota').innerHTML = notaRecogida(pos);
+  estadoP(`Recherche autour de ${pos.origen}…`);
+  let puntos = await buscarPuntos(filiere, pos);
+  if (!puntos.length) puntos = await buscarPuntos(filiere, pos, 20000);
+  if (!el.isConnected) return;
+  estadoP(puntos.length
+    ? `${puntos.length} point(s) le(s) plus proche(s) de ${pos.origen}.`
+    : `Aucun point trouvé à moins de 20 km de ${pos.origen}.`);
+  el.querySelector('#puntos-lista').innerHTML = puntos.map((p, i) => `
+    <li><span class="puntos-n">${i + 1}</span><div>
+      <strong>${esc(p.enseigne_commerciale || (p.nom_de_lorganisme !== 'Point de collecte' && p.nom_de_lorganisme) || p.type_de_point_de_collecte || 'Point de collecte')}</strong>
+      <span>${esc(p.adresse_format_ban || '')} · <b>${distancia(p._geo_distance)}</b></span>
+      <span class="note">${esc(String(p.produitsdechets_acceptes || '').replace(/\|/g, ' · '))}</span>
+      ${p.horaires_douverture ? `<span class="note">${esc(String(p.horaires_douverture).slice(0, 160))}</span>` : ''}
+      <a href="https://www.google.com/maps/dir/?api=1&destination=${p.latitudewgs84},${p.longitudewgs84}&travelmode=walking" target="_blank" rel="noopener">Itinéraire</a>
+    </div></li>`).join('');
+  if (!puntos.length) return;
+  try {
+    const L = await cargarLeaflet();
+    if (!el.isConnected) return;
+    const div = el.querySelector('#puntos-mapa');
+    div.hidden = false;
+    const mapa = L.map(div, { zoomControl: true, attributionControl: true });
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(mapa);
+    const yo = L.circleMarker([pos.lat, pos.lon], { radius: 8, color: '#1a73e8', fillOpacity: 0.8 }).addTo(mapa).bindPopup(esc(pos.origen));
+    const marcas = puntos.map((p, i) => L.marker([p.latitudewgs84, p.longitudewgs84], {
+      icon: L.divIcon({ className: 'puntos-pin', html: String(i + 1), iconSize: [26, 26] }),
+    }).addTo(mapa).bindPopup(esc(p.adresse_format_ban || '')));
+    mapa.fitBounds(L.featureGroup([yo, ...marcas]).getBounds().pad(0.15));
+  } catch { /* carte indisponible : la liste suffit */ }
+}
+
+// Boutons « Où déposer » (résumé du produit, vue rapide, fiche « Autres déchets »).
+document.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-puntos]');
+  if (b) abrirPuntos(b.dataset.puntos);
+});
+function botonesPuntos(r) {
+  if (r.sin_envase) return '';
+  const fil = [...new Set(r.componentes.map((c) => TRI_A_FILIERE[consignaTri(familiaDe(c.material)).id]).filter(Boolean))];
+  return fil.length ? `<div class="enlaces puntos-btns"><span class="note">Où déposer :</span>${fil.map((k) => `<button type="button" class="lnk" data-puntos="${k}">${FILIERES[k].titre}</button>`).join('')}</div>` : '';
+}
 
 // ---------- Démarrage ----------
 

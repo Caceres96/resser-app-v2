@@ -307,3 +307,14 @@ body.modal-abierto { overflow: hidden; }
 .agb { margin-top: 6px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); }
 .agb .field-lbl { font-size: 13px; color: var(--muted); }
 .agb p { margin: 6px 0; }
+
+/* Points de collecte proches : panneau plein écran, carte et liste. */
+.puntos { z-index: 25; }
+.puntos-mapa { height: 42vh; min-height: 220px; border-radius: 12px; overflow: hidden; margin: 6px 0 10px; }
+.puntos-lista { list-style: none; padding: 0; margin: 0; }
+.puntos-lista li { display: flex; gap: 10px; padding: 10px 0; border-top: 1px solid var(--line); }
+.puntos-lista li > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.puntos-lista a { color: var(--accent); font-weight: 600; }
+.puntos-n, .puntos-pin { flex: none; width: 26px; height: 26px; border-radius: 50%; background: #0f766e; color: #fff; font-weight: 700; font-size: 13px; display: grid; place-items: center; }
+.puntos-pin { border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0, 0, 0, .35); }
+.puntos-btns { justify-content: flex-start; align-items: center; gap: 4px 14px; }
