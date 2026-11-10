@@ -21,6 +21,12 @@ const classeur_ = () => SpreadsheetApp.openById(PropertiesService.getScriptPrope
 // Crée une feuille appartenant à la personne qui exécute le script, y copie le premier onglet
 // de la feuille de départ (saisies manuelles du premier ticket), puis installe la structure.
 function creerClasseur() {
+  // Garde-fou : la feuille de l'équipe existe déjà, ne jamais la remplacer par une feuille vide.
+  const existante = PropertiesService.getScriptProperties().getProperty('ID_CLASSEUR');
+  if (existante) {
+    Logger.log(`Rien à faire : la feuille de l'équipe existe déjà (${existante}). Pour publier une nouvelle version : Implémenter › Gérer les déploiements › modifier › Nouvelle version.`);
+    return;
+  }
   const ss = SpreadsheetApp.create('Resser · Test A · données emballages');
   const vierge = ss.getSheets()[0];
   PropertiesService.getScriptProperties().setProperty('ID_CLASSEUR', ss.getId());
