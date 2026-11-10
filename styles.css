@@ -1,19 +1,19 @@
-/* Palette « app2 » : 60 % #FFFFFA (fonds), 30 % #626C66 (structure : en-tête, boutons, onglets),
+/* Palette « app2 » : 60 % #FFFFFA (fonds), 30 % #4B5842 (structure : en-tête, boutons, onglets),
    10 % #C57B57 (accent : action principale, onglet actif, repères). Les couleurs de sens
    (bon / attention / erreur, consignes de tri, familles de matériaux) restent à part. */
 :root {
   --blanc: #fffffa;
-  --sauge: #626c66;
+  --sauge: #4b5842;
   --terre: #c57b57;
   --terre-texte: #9e5a3a; /* terre foncée : lisible en petit texte sur fond clair */
   --bg: var(--blanc);
   --card: var(--blanc);
   --ink: #2a302c;
   --muted: var(--sauge);
-  --line: #dde1da;
+  --line: #dce1d6;
   --accent: var(--sauge);
   --accent-ink: var(--blanc);
-  --soft: #eef0ea;
+  --soft: #eef1e9;
   --cta: var(--terre);
   --cta-ink: var(--blanc);
   --top: var(--sauge);
@@ -31,13 +31,13 @@
     --ink: var(--blanc);
     --muted: #b3bbb5;
     --line: #3a423d;
-    --accent: #a9b3ac;
+    --accent: #a8b49c;
     --accent-ink: #1f2421;
     --soft: #313833;
     --terre-texte: #e0a283;
     --cta: var(--terre);
     --cta-ink: var(--blanc);
-    --top: #2e3530;
+    --top: #2c3428;
     --top-ink: var(--blanc);
     --warn: #e09550;
     --bad: #e2675c;
@@ -374,7 +374,7 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--terre); out
    Surfaces de la couleur du fond, relief par deux ombres (claire en haut à gauche, sauge en bas à droite).
    Un liseré léger reste pour la lisibilité des champs. */
 :root {
-  --neu-sombre: rgba(98, 108, 102, .26);
+  --neu-sombre: rgba(75, 88, 66, .26);
   --neu-clair: #ffffff;
   --neu-haut: 6px 6px 14px var(--neu-sombre), -6px -6px 14px var(--neu-clair);
   --neu-bas: 3px 3px 7px var(--neu-sombre), -3px -3px 7px var(--neu-clair);
@@ -414,8 +414,8 @@ input[type="checkbox"], input[type="radio"] { box-shadow: none; width: auto; }
   content: ''; position: absolute; inset: -16px; z-index: -1; pointer-events: none;
   /* Halos sauge seulement : la terre cuite en haut et en bas de page gênait. */
   background:
-    radial-gradient(45% 30% at 90% 25%, rgba(98, 108, 102, .4), transparent 70%),
-    radial-gradient(45% 30% at 10% 60%, rgba(98, 108, 102, .32), transparent 70%);
+    radial-gradient(45% 30% at 90% 25%, rgba(75, 88, 66, .4), transparent 70%),
+    radial-gradient(45% 30% at 10% 60%, rgba(75, 88, 66, .32), transparent 70%);
 }
 #tab-resumen .card, #tab-resumen .kpi, .balance {
   background: var(--verre);
@@ -425,11 +425,11 @@ input[type="checkbox"], input[type="radio"] { box-shadow: none; width: auto; }
   box-shadow: 0 8px 24px rgba(42, 48, 44, .12);
 }
 #tab-resumen .kpi { background: color-mix(in srgb, var(--verre) 70%, transparent); }
-#tab-resumen .bar, .balance .bar { background: rgba(98, 108, 102, .18); box-shadow: inset 0 1px 2px rgba(42, 48, 44, .15); }
+#tab-resumen .bar, .balance .bar { background: rgba(75, 88, 66, .18); box-shadow: inset 0 1px 2px rgba(42, 48, 44, .15); }
 .balance { position: relative; overflow: hidden; }
 .balance::before {
   content: ''; position: absolute; inset: 0; z-index: -1; pointer-events: none;
-  background: radial-gradient(60% 80% at 100% 0%, rgba(197, 123, 87, .3), transparent 70%), radial-gradient(60% 80% at 0% 100%, rgba(98, 108, 102, .3), transparent 70%);
+  background: radial-gradient(60% 80% at 100% 0%, rgba(197, 123, 87, .3), transparent 70%), radial-gradient(60% 80% at 0% 100%, rgba(75, 88, 66, .3), transparent 70%);
 }
 .balance { isolation: isolate; }
 
