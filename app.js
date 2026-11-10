@@ -4,12 +4,12 @@ import {
 } from './reglas.js';
 import { lireTicket, lireTicketPdf, apparier, ajouterLibelle, libellesDe, detecterDate, detecterEnseigne, detecterTotal, requeteRecherche } from './ticket.js';
 
-const APP_VERSION = '1.6.0-beta';
+const APP_VERSION = '1.7.0-beta';
 // Version bêta : stockage séparé de l'application stable (même origine github.io, autre clé),
 // pour qu'une erreur ici ne touche jamais l'inventaire de la version stable.
 const KEY = 'resser.v2';
 const KEY_STABLE = 'resser.pruebaA.v1';
-const OFF_FIELDS = 'code,product_name,product_name_fr,brands,quantity,packagings,packagings_complete,image_front_small_url,categories_tags';
+const OFF_FIELDS = 'code,product_name,product_name_fr,brands,quantity,packagings,packagings_complete,image_front_small_url,categories_tags,ecoscore_data';
 // Lecteur de secours (zxing-cpp en WebAssembly) quand le navigateur n'a pas de BarcodeDetector natif (iPhone, Firefox…).
 const LIB_LECTOR = 'https://cdn.jsdelivr.net/npm/barcode-detector@3.2.0/dist/iife/ponyfill.js';
 const FORMATOS = ['ean_13', 'ean_8', 'upc_a', 'upc_e'];
@@ -162,6 +162,7 @@ function nuevoRegistro(gtin, res) {
       consultado: ahora(),
     },
     componentes: componentesDesdeOFF(p.packagings),
+    agribalyse: agribalyseOFF(p),
     verificado: false,
     exactitud_off: res.estado === 'encontrado' && !(p.packagings || []).length ? 'sin_datos' : '',
     clase_manual: '',
@@ -172,6 +173,47 @@ function nuevoRegistro(gtin, res) {
     actualizado: ahora(),
     version_app: APP_VERSION,
   };
+}
+
+// ---------- Impact environnemental (AGRIBALYSE, ADEME) ----------
+// Open Food Facts rattache un aliment à sa fiche Agribalyse (code CIQUAL) et donne la part de l'emballage.
+// Les valeurs par kg viennent de préférence de la table AGRIBALYSE v3.2 livrée avec l'app (agribalyse.json).
+function agribalyseOFF(p) {
+  const a = p?.ecoscore_data?.agribalyse;
+  if (!a?.code || num(a.co2_total) == null) return null;
+  const co2 = num(a.co2_total), emb = num(a.co2_packaging);
+  return { code: String(a.code), nom: a.name_fr || '', co2, ef: num(a.ef_total), part_emb: co2 && emb != null ? emb / co2 : null, source: 'off' };
+}
+
+let tablaAgb = null;
+let agbListo = null; // table chargée (lecture synchrone pour l'affichage)
+const cargarAgb = () => (tablaAgb ??= fetch('agribalyse.json').then((r) => r.json()).then((j) => {
+  const porCodigo = new Map(j.data.map((x) => [x[0], { code: x[0], nom: x[1], groupe: x[2], sous: x[3], ef: x[4], co2: x[5], dqr: x[6] }]));
+  agbListo = { source: j.source, porCodigo, lista: [...porCodigo.values()] };
+  return agbListo;
+}).catch(() => { tablaAgb = null; return null; }));
+cargarAgb();
+
+// Valeurs par kg retenues : table v3.2 si le code y est, sinon celles d'Open Food Facts.
+function valoresAgb(a) {
+  if (!a) return null;
+  const t = agbListo?.porCodigo.get(a.code);
+  return { nom: t?.nom || a.nom, co2: t ? t.co2 : a.co2, ef: t ? t.ef : a.ef, part_emb: a.part_emb };
+}
+
+// Masse de l'unité de vente d'après la quantité affichée (« 400 g », « 1,5 L », « 6 x 25 cl ») ; 1 L ≈ 1 kg.
+function masaKg(txt) {
+  const m = /(?:(\d+)\s*[x×]\s*)?(\d+(?:\.\d+)?)\s*(kg|g|l|cl|ml)\b/.exec(String(txt || '').toLowerCase().replace(',', '.'));
+  if (!m) return null;
+  return (m[1] ? Number(m[1]) : 1) * Number(m[2]) * { kg: 1, g: 0.001, l: 1, cl: 0.01, ml: 0.001 }[m[3]];
+}
+
+const sinAcentos = (t) => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+function buscarAgb(q) {
+  const mots = sinAcentos(q).split(/[^a-z0-9]+/).filter((w) => w.length > 1);
+  if (!mots.length || !agbListo) return [];
+  return agbListo.lista.filter((x) => { const n = sinAcentos(x.nom); return mots.every((w) => n.includes(w)); })
+    .sort((a, b) => a.nom.length - b.nom.length).slice(0, 8);
 }
 
 // ---------- Règles de qualité (classes A/B/C/D du plan) ----------
@@ -372,6 +414,7 @@ async function buscar(valor, { reconsultar = false, camara = false } = {}) {
       r.off = { estado: res.estado, base: res.base || '', packagings_complete: p.packagings_complete ?? null, packagings: p.packagings || [], consultado: ahora() };
       r.componentes = componentesDesdeOFF(p.packagings);
       if (!r.categoria) r.categoria = sugerirRayon(p, res.base);
+      if (!r.agribalyse) r.agribalyse = agribalyseOFF(p);
       r.verificado = false;
       estado('Données mises à jour. Vérifiez à nouveau puis enregistrez.');
       abrirEditor(r, actual?._origen || 'scan');
@@ -826,7 +869,33 @@ function pasoTipo(r) {
       <label class="field">Marque<input data-k="marca" value="${esc(r.marca)}" placeholder="ex. Evian"></label>
       <label class="field">Taille / format<input data-k="cantidad" value="${esc(r.cantidad)}" placeholder="ex. 1,5 L · 500 g · taille M"></label>
     </div>
-    <label class="field">Supermarché<input data-k="enseigne" list="enseignes" value="${esc(r.enseigne)}" placeholder="ex. Carrefour"></label>`;
+    <label class="field">Supermarché<input data-k="enseigne" list="enseignes" value="${esc(r.enseigne)}" placeholder="ex. Carrefour"></label>
+    ${seccionDe(r.categoria) === 'alimentation' || r.agribalyse ? bloqueAgb(r) : ''}`;
+}
+
+const dec = (n, d = 2) => String(Math.round(n * 10 ** d) / 10 ** d).replace('.', ',');
+
+// Aliment Agribalyse associé (impact environnemental) : proposé par Open Food Facts ou choisi dans la table.
+function bloqueAgb(r) {
+  const v = valoresAgb(r.agribalyse);
+  const busca = r._agbBusca ? `
+    <input id="agb-q" type="search" autocomplete="off" placeholder="ex. yaourt nature, pâtes, jus d'orange" value="${esc(r._agbQ || '')}">
+    <ul id="agb-res" class="dechet-res">${pintarAgbRes(r._agbQ)}</ul>` : '';
+  return `
+    <div class="agb">
+      <div class="field-lbl">Impact environnemental (Agribalyse)</div>
+      ${v ? `<p><strong>${esc(v.nom)}</strong><br><span class="note">${dec(v.co2)} kg CO2e/kg · ${dec(v.ef, 3)} mPt/kg${r.agribalyse.source === 'off' ? ' · proposé par Open Food Facts' : ''}</span></p>`
+        : '<p class="note">Aucun aliment associé : choisissez l’aliment le plus proche.</p>'}
+      ${r._agbBusca ? '' : `<button type="button" id="agb-cambiar" class="secondary">${v ? 'Changer d’aliment' : 'Associer un aliment'}</button>`}
+      ${busca}
+    </div>`;
+}
+function pintarAgbRes(q) {
+  if (!q || q.trim().length < 2) return '';
+  if (!agbListo) return '<li class="note">Chargement de la table Agribalyse…</li>';
+  const res = buscarAgb(q);
+  return res.length ? res.map((x) => `<li><button type="button" class="dechet-item" data-agb="${esc(x.code)}"><strong>${esc(x.nom)}</strong><span>${dec(x.co2)} kg CO2e/kg</span></button></li>`).join('')
+    : '<li class="note">Aucun aliment trouvé : essayez un mot plus général.</li>';
 }
 
 function pasoEmbalaje(r) {
@@ -974,6 +1043,11 @@ $('#editor').addEventListener('change', async (e) => {
 $('#editor').addEventListener('toggle', (e) => { if (e.target.id === 'det' && actual) actual._det = e.target.open; }, true);
 function alEditar(e) {
   const t = e.target;
+  if (t.id === 'agb-q') {
+    actual._agbQ = t.value;
+    $('#agb-res').innerHTML = pintarAgbRes(t.value);
+    return;
+  }
   if (!actual || t.id === 'foto-producto') return;
   if (t.dataset.k) {
     actual[t.dataset.k] = t.type === 'checkbox' ? t.checked : t.value;
@@ -1038,6 +1112,17 @@ $('#editor').addEventListener('click', (e) => {
     pintarEditor();
   } else if (t.id === 'menos') {
     actual.componentes.pop();
+    pintarEditor();
+  } else if (t.id === 'agb-cambiar') {
+    actual._agbBusca = true;
+    actual._agbQ ??= (actual.nombre || '').split(/\s+/)[0] || '';
+    pintarEditor();
+    $('#agb-q')?.focus();
+  } else if (t.dataset.agb) {
+    const x = agbListo?.porCodigo.get(t.dataset.agb);
+    // Même aliment que celui proposé : on garde la part de l'emballage donnée par Open Food Facts.
+    if (x && x.code !== actual.agribalyse?.code) actual.agribalyse = { code: x.code, nom: x.nom, co2: x.co2, ef: x.ef, part_emb: null, source: 'manuel' };
+    actual._agbBusca = false;
     pintarEditor();
   } else if (t.id === 'detallado') {
     actual._modo = 'edicion';
@@ -1762,6 +1847,34 @@ function pintarResumen() {
       <h3>Destination selon la consigne de tri</h3>
       <div class="tabla"><table><thead><tr><th>Contenant</th><th class="num">Unités</th><th class="num">%</th></tr></thead><tbody>${filasTri}</tbody></table></div>
       <p class="note">${esc(FUENTE_TRI)}</p>
+    </div>
+    ${seccionImpacto(refs)}`;
+}
+
+// Impact environnemental des références alimentaires : valeur Agribalyse par kg × masse de l'unité de vente.
+function seccionImpacto(refs) {
+  const alim = refs.filter((r) => seccionDe(r.categoria) === 'alimentation' || r.agribalyse);
+  if (!alim.length) return '';
+  const filas = alim.map((r) => {
+    const v = valoresAgb(r.agribalyse), kg = masaKg(r.cantidad);
+    return v && kg ? { r, v, kg, co2: v.co2 * kg, ef: v.ef * kg } : null;
+  }).filter(Boolean);
+  const conAgb = alim.filter((r) => r.agribalyse).length;
+  const conEmb = filas.filter((f) => f.v.part_emb != null);
+  const co2Emb = conEmb.reduce((s, f) => s + f.co2 * f.v.part_emb, 0), co2Tot = conEmb.reduce((s, f) => s + f.co2, 0);
+  const media = filas.length ? filas.reduce((s, f) => s + f.co2, 0) / filas.length : null;
+  const top = [...filas].sort((a, b) => b.co2 - a.co2).slice(0, 5)
+    .map((f) => `<tr><td>${esc(f.r.nombre || f.r.gtin)}<br><span class="note">${esc(f.v.nom)} · ${esc(f.r.cantidad)}</span></td><td class="num">${dec(f.co2)}</td><td class="num">${dec(f.ef, 3)}</td></tr>`).join('');
+  return `
+    <div class="card">
+      <h3>Impact environnemental (aliments)</h3>
+      <div class="kpis">
+        ${kpi('Aliments reliés à Agribalyse', conAgb, alim.length, null)}
+        <div class="kpi"><div class="l">CO2e moyen par produit</div><div class="v">${media == null ? '—' : `${dec(media)} kg`}</div><div class="n">${filas.length} produit(s) avec poids connu</div></div>
+        <div class="kpi"><div class="l">Part du CO2e due à l’emballage</div><div class="v">${co2Tot ? `${dec((co2Emb / co2Tot) * 100, 1)} %` : '—'}</div><div class="n">${conEmb.length} produit(s) avec le détail par étape</div></div>
+      </div>
+      ${top ? `<div class="tabla" style="margin-top:12px"><table><thead><tr><th>Plus fort impact (par unité)</th><th class="num">kg CO2e</th><th class="num">mPt EF</th></tr></thead><tbody>${top}</tbody></table></div>` : ''}
+      <p class="note">Valeurs génériques par kg de la catégorie d’aliment (pas de la marque exacte) × poids indiqué sur l’emballage (1 L ≈ 1 kg). Source : ${esc(agbListo?.source || 'AGRIBALYSE, ADEME')} ; part de l’emballage d’après Open Food Facts. Le score EF (mPt) résume les 16 indicateurs d’impact.</p>
     </div>`;
 }
 

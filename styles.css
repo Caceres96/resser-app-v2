@@ -302,3 +302,8 @@ body.modal-abierto { overflow: hidden; }
 .fiche-dechet p, .fiche-dechet li { font-size: 15px; }
 .fiche-dechet ul { padding-left: 20px; }
 .fiche-dechet a.button { text-decoration: none; margin-top: 14px; }
+
+/* Aliment Agribalyse dans l assistant. */
+.agb { margin-top: 6px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); }
+.agb .field-lbl { font-size: 13px; color: var(--muted); }
+.agb p { margin: 6px 0; }
