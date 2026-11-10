@@ -350,6 +350,63 @@ function dictionnaire_(sh) {
 
 const json_ = (o) => ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON);
 
+// ---------- « Que faire de mes objets et déchets » (ADEME) ----------
+const QFD = 'https://quefairedemesdechets.ademe.fr';
+const QFD_UA = { 'User-Agent': 'Resser/1.0 (etude de faisabilite dechets, Grand Nancy)' };
+const texte_ = (h) => String(h || '').replace(/<[^>]+>/g, ' ')
+  .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&#x27;|&#39;|&rsquo;/g, '’').replace(/&quot;/g, '"')
+  .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/\s+/g, ' ').trim();
+
+function qfdRecherche_(q) {
+  q = String(q || '').replace(/\s+/g, ' ').trim().slice(0, 80);
+  if (q.length < 2) return { ok: true, resultats: [] };
+  const cache = CacheService.getScriptCache(), cleCache = `qfd:${q.toLowerCase()}`;
+  const enCache = cache.get(cleCache);
+  if (enCache) return { ok: true, resultats: JSON.parse(enCache) };
+  const rep = UrlFetchApp.fetch(`${QFD}/assistant/autocomplete-search?q=${encodeURIComponent(q)}`, { muteHttpExceptions: true, headers: QFD_UA });
+  if (rep.getResponseCode() !== 200) return { ok: false, erreur: `ADEME a répondu ${rep.getResponseCode()}` };
+  const resultats = [];
+  const re = /<li[^>]*role="option"[\s\S]*?<a\s+href="([^"]+)"[\s\S]*?>([\s\S]*?)<\/a>([\s\S]*?)<\/li>/g;
+  let m;
+  while ((m = re.exec(rep.getContentText())) && resultats.length < 10) {
+    const cat = /<span[^>]*italic[^>]*>([\s\S]*?)<\/span>/.exec(m[3]);
+    resultats.push({ nom: texte_(m[2]), categorie: cat ? texte_(cat[1]) : '', url: m[1] });
+  }
+  cache.put(cleCache, JSON.stringify(resultats), 21600);
+  return { ok: true, resultats };
+}
+
+// Fiche : titres, paragraphes et listes du contenu principal, jusqu'aux rubriques annexes
+// (« Le saviez-vous ? », questions fréquentes…). Seules les pages /categories/ et /dechet/ sont relayées.
+function qfdFiche_(url) {
+  url = String(url || '');
+  if (!/^\/(categories|dechet)\/[a-z0-9\/_-]+\/?$/.test(url)) return { ok: false, erreur: 'Adresse non autorisée' };
+  const cache = CacheService.getScriptCache(), cleCache = `qfdp:${url}`;
+  const enCache = cache.get(cleCache);
+  if (enCache) return JSON.parse(enCache);
+  const rep = UrlFetchApp.fetch(QFD + url, { muteHttpExceptions: true, headers: QFD_UA });
+  if (rep.getResponseCode() !== 200) return { ok: false, erreur: `ADEME a répondu ${rep.getResponseCode()}` };
+  let main = (/<main[\s\S]*?<\/main>/.exec(rep.getContentText()) || [''])[0];
+  main = main.replace(/<(script|style|svg|iframe|template|nav)\b[\s\S]*?<\/\1>/g, '');
+  const blocs = [];
+  let titre = '', m;
+  const re = /<(h1|h2|h3|p|li)\b[^>]*>([\s\S]*?)<\/\1>/g;
+  while ((m = re.exec(main))) {
+    const x = texte_(m[2]);
+    if (!x) continue;
+    if (m[1] === 'h1') { titre = x; continue; }
+    if (!titre) continue; // fil d'Ariane avant le titre
+    if (m[1] === 'h2' && /saviez|questions|mesurer|consommer responsable|en savoir plus|bonus/i.test(x)) break;
+    if (/^En savoir plus sur l.Info-tri$|^Dernière mise à jour/.test(x)) continue;
+    blocs.push({ t: m[1], x: x.slice(0, 600) });
+    if (blocs.length >= 40) break;
+  }
+  const maj = /Dernière mise à jour\s*:\s*([0-9\/]+)/.exec(texte_(main));
+  const res = { ok: true, titre, blocs, source: QFD + url, maj: maj ? maj[1] : '' };
+  cache.put(cleCache, JSON.stringify(res), 21600);
+  return res;
+}
+
 // ?cle=XXXX : test de connexion. ?cle=XXXX&gtin=… : fiche déjà saisie par l'équipe (ou null),
 // pour pré-remplir l'application quand quelqu'un d'autre a déjà caractérisé le produit.
 function doGet(e) {
@@ -381,6 +438,11 @@ function doGet(e) {
     cache.put(cleCache, JSON.stringify(produits), 21600);
     return json_({ ok: true, produits });
   }
+  // « Que faire de mes objets et déchets » (ADEME) pour les déchets qui ne sont pas des emballages :
+  // ?accion=dechets&q=… (recherche) et ?accion=dechet&url=/categories/… (fiche). Le site ne répond qu'en
+  // HTML et sans autorisation pour le navigateur : le script relaie et ne garde que le texte utile.
+  if (p.accion === 'dechets') return json_(qfdRecherche_(p.q));
+  if (p.accion === 'dechet') return json_(qfdFiche_(p.url));
   // Catalogue léger (sans photos ni fiches complètes) : sert à rapprocher les libellés de ticket.
   if (p.accion === 'lista') {
     const shR = ss.getSheetByName(ONGLETS.ref);

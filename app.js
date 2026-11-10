@@ -4,7 +4,7 @@ import {
 } from './reglas.js';
 import { lireTicket, lireTicketPdf, apparier, ajouterLibelle, libellesDe, detecterDate, detecterEnseigne, detecterTotal, requeteRecherche } from './ticket.js';
 
-const APP_VERSION = '1.5.0-beta';
+const APP_VERSION = '1.6.0-beta';
 // Version bêta : stockage séparé de l'application stable (même origine github.io, autre clé),
 // pour qu'une erreur ici ne touche jamais l'inventaire de la version stable.
 const KEY = 'resser.v2';
@@ -1764,6 +1764,82 @@ function pintarResumen() {
       <p class="note">${esc(FUENTE_TRI)}</p>
     </div>`;
 }
+
+// ---------- Autres déchets : « Que faire de mes objets et déchets » (ADEME, via le script) ----------
+
+const estadoDechet = (m) => { $('#dechet-estado').textContent = m || ''; };
+async function pedirQfd(params) {
+  if (!conectado()) throw new Error('Saisissez la clé de l’équipe dans « Contexte d’achat » (onglet Scanner).');
+  const j = await (await fetch(`${FEUILLE.url}?cle=${encodeURIComponent(FEUILLE.cle)}&${params}`)).json();
+  if (!j.ok) throw new Error(j.erreur || 'service indisponible');
+  return j;
+}
+
+let busquedaDechet = 0, temporizador = null;
+$('#dechet-q').addEventListener('input', () => {
+  clearTimeout(temporizador);
+  temporizador = setTimeout(buscarDechet, 400);
+});
+async function buscarDechet() {
+  const q = $('#dechet-q').value.trim();
+  const id = ++busquedaDechet;
+  $('#dechet-fiche').innerHTML = '';
+  if (q.length < 2) { $('#dechet-res').innerHTML = ''; estadoDechet(''); return; }
+  estadoDechet('Recherche…');
+  try {
+    const j = await pedirQfd(`accion=dechets&q=${encodeURIComponent(q)}`);
+    if (id !== busquedaDechet) return;
+    // Ancienne version du script : la recherche n'existe pas encore.
+    if (!Array.isArray(j.resultats)) throw new Error('le script de l’équipe doit être mis à jour (nouvelle version du déploiement).');
+    estadoDechet(j.resultats.length ? '' : `Aucun résultat pour « ${q} ». Essayez un autre mot.`);
+    $('#dechet-res').innerHTML = j.resultats.map((r) => `
+      <li><button type="button" class="dechet-item" data-url="${esc(r.url)}">
+        <strong>${esc(r.nom)}</strong>${r.categorie ? `<span>${esc(r.categorie)}</span>` : ''}</button></li>`).join('');
+  } catch (err) {
+    if (id === busquedaDechet) estadoDechet(`Recherche impossible : ${err.message || err}`);
+  }
+}
+
+$('#dechet-res').addEventListener('click', async (e) => {
+  const b = e.target.closest('[data-url]');
+  if (!b) return;
+  $('#dechet-res').innerHTML = '';
+  estadoDechet('Chargement de la fiche…');
+  try {
+    pintarFicheDechet(await pedirQfd(`accion=dechet&url=${encodeURIComponent(b.dataset.url)}`));
+    estadoDechet('');
+  } catch (err) {
+    estadoDechet(`Fiche indisponible : ${err.message || err}`);
+  }
+});
+
+function pintarFicheDechet(f) {
+  let html = '', enLista = false;
+  // Un titre suivi directement d'un titre de même niveau (rubrique « carte » vide sans le site) est omis.
+  const nivel = (t) => ({ h2: 2, h3: 3 }[t] || 9);
+  const blocs = (f.blocs || []).filter((b, i, l) => nivel(b.t) === 9 || !l[i + 1] ? nivel(b.t) === 9 : nivel(l[i + 1].t) > nivel(b.t));
+  for (const b of blocs) {
+    if (b.t === 'li' && !enLista) { html += '<ul>'; enLista = true; }
+    if (b.t !== 'li' && enLista) { html += '</ul>'; enLista = false; }
+    html += b.t === 'h2' ? `<h3>${esc(b.x)}</h3>` : b.t === 'h3' ? `<h4>${esc(b.x)}</h4>` : b.t === 'li' ? `<li>${esc(b.x)}</li>` : `<p>${esc(b.x)}</p>`;
+  }
+  if (enLista) html += '</ul>';
+  $('#dechet-fiche').innerHTML = `
+    <div class="card fiche-dechet">
+      <h2>${esc(f.titre)}</h2>
+      ${html || '<p class="note">Pas de conseil détaillé pour cet objet : consultez la fiche complète.</p>'}
+      <a class="button primary wide" href="${esc(f.source)}" target="_blank" rel="noopener">Où le déposer près de chez moi (carte ADEME)</a>
+      <p class="note">Source : Que faire de mes objets &amp; déchets – ADEME${f.maj ? `, mise à jour le ${esc(f.maj)}` : ''}.</p>
+      <button type="button" id="dechet-otro" class="secondary wide">Chercher un autre objet</button>
+    </div>`;
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+$('#dechet-fiche').addEventListener('click', (e) => {
+  if (e.target.id !== 'dechet-otro') return;
+  $('#dechet-fiche').innerHTML = '';
+  $('#dechet-q').value = '';
+  $('#dechet-q').focus();
+});
 
 // ---------- Démarrage ----------
 

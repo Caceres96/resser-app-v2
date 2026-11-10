@@ -24,6 +24,7 @@
       <button type="button" data-tab="ticket">Ticket</button>
       <button type="button" data-tab="inventario">Inventaire <span id="count" class="pill">0</span></button>
       <button type="button" data-tab="resumen">Synthèse</button>
+      <button type="button" data-tab="dechets">Déchets</button>
     </nav>
   </header>
 
@@ -46,7 +47,22 @@
           <svg viewBox="0 0 64 64" aria-hidden="true"><path d="M10 54h44" stroke="currentColor" stroke-width="4" stroke-linecap="round"/><rect x="14" y="32" width="8" height="18" rx="2" fill="currentColor"/><rect x="28" y="20" width="8" height="30" rx="2" fill="currentColor"/><rect x="42" y="10" width="8" height="40" rx="2" fill="currentColor"/></svg>
           <span>Synthèse</span>
         </button>
+        <button type="button" class="tile t-dechets ancho" data-ir="dechets">
+          <svg viewBox="0 0 64 64" aria-hidden="true"><path d="M14 30v-6a6 6 0 0 1 6-6h24a6 6 0 0 1 6 6v6" fill="none" stroke="currentColor" stroke-width="4" stroke-linejoin="round"/><path d="M8 34a5 5 0 0 1 10 0v4h28v-4a5 5 0 0 1 10 0v12H8z" fill="none" stroke="currentColor" stroke-width="4" stroke-linejoin="round"/><path d="M14 46v6M50 46v6" stroke="currentColor" stroke-width="4" stroke-linecap="round"/></svg>
+          <span>Autres déchets</span>
+        </button>
       </div>
+    </section>
+
+    <section id="tab-dechets" class="tab">
+      <div class="card">
+        <h3>Que faire de cet objet ou déchet ?</h3>
+        <p class="note">Pour ce qui n'est pas un emballage : vêtement, téléphone, pile, meuble, jouet… Réponses de l'ADEME.</p>
+        <input id="dechet-q" type="search" autocomplete="off" placeholder="ex. canapé, téléphone, pile">
+        <p id="dechet-estado" class="muted" role="status"></p>
+        <ul id="dechet-res" class="dechet-res"></ul>
+      </div>
+      <div id="dechet-fiche"></div>
     </section>
 
     <section id="tab-escanear" class="tab">

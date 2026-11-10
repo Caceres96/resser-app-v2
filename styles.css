@@ -288,3 +288,17 @@ body.modal-abierto { overflow: hidden; }
 .t-inv { background: #2c7a4b; }
 .t-syn { background: #1a73e8; }
 .inicio-btn { padding: 6px; background: var(--soft); color: var(--accent); border-radius: 10px; }
+
+/* Autres déchets (ADEME) : 5e tuile sur toute la largeur, résultats et fiche. */
+.tile.ancho { grid-column: 1 / -1; flex-direction: row; min-height: 110px; }
+.t-dechets { background: #0f766e; }
+.dechet-res { list-style: none; padding: 0; margin: 8px 0 0; }
+.dechet-item { width: 100%; justify-content: space-between; text-align: left; background: none; border: none; border-top: 1px solid var(--line); border-radius: 0; padding: 12px 4px; color: var(--ink); font-weight: 400; }
+.dechet-item strong { font-weight: 600; }
+.dechet-item span { color: var(--muted); font-size: 13px; font-style: italic; text-align: right; }
+.fiche-dechet h2 { font-size: 19px; margin: 0 0 8px; }
+.fiche-dechet h3 { font-size: 16px; margin: 16px 0 6px; }
+.fiche-dechet h4 { font-size: 15px; margin: 12px 0 4px; color: var(--accent); }
+.fiche-dechet p, .fiche-dechet li { font-size: 15px; }
+.fiche-dechet ul { padding-left: 20px; }
+.fiche-dechet a.button { text-decoration: none; margin-top: 14px; }
