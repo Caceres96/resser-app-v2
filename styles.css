@@ -436,3 +436,18 @@ input[type="checkbox"], input[type="radio"] { box-shadow: none; width: auto; }
 /* 1.10.0 : poids à compléter (« À peser ») */
 .tile .pill.apeser { background: var(--terre); color: var(--blanc); font-style: normal; }
 #lista .info .sin-peso { display: block; font-size: 12px; }
+
+/* 1.10.2 : accueil — photo en fond derrière l'en-tête et la première rangée (Scanner, Ticket).
+   Voile sombre en haut pour lire le titre ; fondu vers le fond clair sous la première rangée. */
+body.en-inicio { position: relative; }
+body.en-inicio::before {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 300px; z-index: -1; pointer-events: none;
+  background:
+    linear-gradient(180deg, rgba(20, 16, 8, .55) 0%, rgba(20, 16, 8, .15) 45%, rgba(255, 255, 250, 0) 75%, var(--bg) 100%),
+    url('fondo-accueil.jpg') center 30% / cover no-repeat;
+}
+body.en-inicio .top { position: relative; background: transparent; border-bottom: 0; }
+body.en-inicio .brand span { color: rgba(255, 255, 250, .9); }
+body.en-inicio .brand strong { color: #fffffa; text-shadow: 0 1px 3px rgba(0, 0, 0, .4); }
+body.en-inicio .t-ticket { background: rgba(255, 255, 250, .88); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
+body.en-inicio .t-scan, body.en-inicio .t-ticket { box-shadow: 0 6px 18px rgba(0, 0, 0, .28); }

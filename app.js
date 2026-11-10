@@ -4,7 +4,7 @@ import {
 } from './reglas.js';
 import { lireTicket, lireTicketPdf, apparier, ajouterLibelle, libellesDe, similarite, detecterDate, detecterEnseigne, detecterTotal, requeteRecherche } from './ticket.js';
 
-const APP_VERSION = '1.10.1-beta';
+const APP_VERSION = '1.10.2-beta';
 // Version bêta : stockage séparé de l'application stable (même origine github.io, autre clé),
 // pour qu'une erreur ici ne touche jamais l'inventaire de la version stable.
 const KEY = 'resser.v2';
@@ -327,6 +327,7 @@ $('#ir-inicio').addEventListener('click', () => mostrarTab('inicio'));
 function mostrarTab(id) {
   $('.tabs').hidden = id === 'inicio';
   $('#ir-inicio').hidden = id === 'inicio';
+  document.body.classList.toggle('en-inicio', id === 'inicio');
   window.scrollTo({ top: 0 });
   document.querySelectorAll('.tabs button').forEach((b) => b.classList.toggle('active', b.dataset.tab === id));
   document.querySelectorAll('.tab').forEach((t) => t.classList.toggle('active', t.id === `tab-${id}`));
