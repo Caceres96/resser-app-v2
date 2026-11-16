@@ -529,3 +529,12 @@ body.en-inicio .brand .logo { height: 40px; filter: drop-shadow(0 1px 3px rgba(0
 body.en-inicio .brand .lema { font-size: 13px; margin-top: 4px; text-shadow: 0 1px 3px rgba(0, 0, 0, .45); }
 .logo-pie { display: block; width: 96px; height: auto; margin: 28px auto 0; }
 .logo-pie + .pie-inicio { margin-top: 6px; }
+
+/* 1.14.0 : impact — moyenne et total, équivalences du CO2e */
+.kpi-total { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line); font-size: 13px; color: var(--muted); }
+.kpi-total strong { font-size: 18px; font-weight: 800; color: var(--ink); }
+.kpi.equiv ul { list-style: none; margin: 6px 0 0; padding: 0; font-size: 13px; color: var(--muted); }
+.kpi.equiv li { display: flex; gap: 8px; align-items: flex-start; }
+.kpi.equiv li + li { margin-top: 6px; }
+.kpi.equiv .eq-ic { font-size: 20px; line-height: 1.1; flex: none; }
+.kpi.equiv li strong { font-size: 17px; font-weight: 800; color: var(--terre-texte); }
