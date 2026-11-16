@@ -518,3 +518,14 @@ body.en-inicio .perfil-btn { display: grid; place-items: center; }
 .grupo-lbl { flex: 1; min-width: 0; }
 .lista li.grupo em { font-style: normal; font-size: 13px; color: var(--muted); }
 @media (prefers-color-scheme: dark) { .mos-ic, .grupo-ic { color: var(--accent); } }
+
+/* 1.13.1 : logo Resser (vert gris officiel #78997F ; en crème sur l'en-tête et la photo) */
+:root { --logo: #78997f; }
+.brand .marca { min-width: 0; }
+.brand .marca strong { display: flex; align-items: center; gap: 8px; }
+.brand .logo { display: block; height: 24px; width: auto; }
+.brand .lema { display: block; font-size: 12px; font-style: italic; }
+body.en-inicio .brand .logo { height: 40px; filter: drop-shadow(0 1px 3px rgba(0, 0, 0, .35)); }
+body.en-inicio .brand .lema { font-size: 13px; margin-top: 4px; text-shadow: 0 1px 3px rgba(0, 0, 0, .45); }
+.logo-pie { display: block; width: 96px; height: auto; margin: 28px auto 0; }
+.logo-pie + .pie-inicio { margin-top: 6px; }
