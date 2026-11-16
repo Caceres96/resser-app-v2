@@ -4,7 +4,7 @@ import {
 } from './reglas.js';
 import { lireTicket, lireTicketPdf, apparier, ajouterLibelle, libellesDe, similarite, detecterDate, detecterEnseigne, detecterTotal, requeteRecherche } from './ticket.js';
 
-const APP_VERSION = '1.14.0-beta';
+const APP_VERSION = '1.14.1-beta';
 // Version bêta : stockage séparé de l'application stable (même origine github.io, autre clé),
 // pour qu'une erreur ici ne touche jamais l'inventaire de la version stable.
 const KEY = 'resser.v2';
@@ -2272,10 +2272,10 @@ function pintarResumen() {
 
 // Équivalences d'un total de CO2e (kg CO2e par personne, impactCO2.fr — ADEME, consulté le 2026-11-16).
 const EQUIV_CO2 = [
-  { id: 'voiture', ic: '🚗', label: 'en voiture thermique', u: 'km', k: 0.142 },
-  { id: 'avion', ic: '✈️', label: 'en avion (trajet court)', u: 'km', k: 0.225 },
-  { id: 'tgv', ic: '🚄', label: 'en TGV', u: 'km', k: 0.0029 },
-  { id: 'boeuf', ic: '🥩', label: 'repas avec du bœuf', u: '', k: 4.97 },
+  { id: 'voiture', ic: '🚗', label: 'km en voiture', k: 0.142 },
+  { id: 'avion', ic: '✈️', label: 'km en avion', k: 0.225 },
+  { id: 'tgv', ic: '🚄', label: 'km en TGV', k: 0.0029 },
+  { id: 'boeuf', ic: '🥩', label: 'repas au bœuf', k: 4.97 },
 ];
 const nEquiv = (v) => (v >= 100 ? Math.round(v).toLocaleString('fr-FR') : v >= 10 ? String(Math.round(v)) : dec(v, 1));
 
@@ -2294,20 +2294,19 @@ function seccionImpacto(refs) {
   const media = filas.length ? total / filas.length : null;
   // Achats réels des tickets (lignes identifiées × quantité), quand il y en a.
   const tk = (db.tickets || []).map(balanceTicket).reduce((a, b) => ({ co2: a.co2 + b.co2, n: a.n + b.co2n }), { co2: 0, n: 0 });
-  const equiv = total ? EQUIV_CO2.map((e) => `<li><span class="eq-ic" aria-hidden="true">${e.ic}</span><span><strong>${nEquiv(total / e.k)}${e.u ? ' ' + e.u : ''}</strong> ${esc(e.label)}</span></li>`).join('') : '';
+  const equiv = total ? EQUIV_CO2.map((e) => `<div class="eq"><span class="eq-ic" aria-hidden="true">${e.ic}</span><strong>${nEquiv(total / e.k)}</strong><span class="eq-l">${esc(e.label)}</span></div>`).join('') : '';
   const top = [...filas].sort((a, b) => b.co2 - a.co2).slice(0, 5)
     .map((f) => `<tr><td>${esc(f.r.nombre || f.r.gtin)}<br><span class="note">${esc(f.v.nom)} · ${esc(f.r.cantidad)}</span></td><td class="num">${dec(f.co2)}</td><td class="num">${dec(f.ef, 3)}</td></tr>`).join('');
   return `
     <div class="card">
       <h3>Impact environnemental (aliments)</h3>
-      <div class="kpis">
-        ${kpi('Aliments reliés à Agribalyse', conAgb, alim.length, null)}
-        <div class="kpi"><div class="l">CO2e par produit</div><div class="v">${media == null ? '—' : `${dec(media)} kg`}</div><div class="n">moyenne · ${filas.length} produit(s) avec poids connu</div>
-          ${filas.length ? `<div class="kpi-total"><span>Total</span> <strong>${dec(total, 1)} kg CO2e</strong></div><div class="n">une unité de chaque produit${tk.n ? ` · achats des tickets : ${dec(tk.co2, 1)} kg` : ''}</div>` : ''}</div>
-        <div class="kpi"><div class="l">Part du CO2e due à l’emballage</div><div class="v">${co2Tot ? `${dec((co2Emb / co2Tot) * 100, 1)} %` : '—'}</div><div class="n">${conEmb.length} produit(s) avec le détail par étape</div></div>
-        <div class="kpi equiv"><div class="l">Ces ${total ? dec(total, 1) : '—'} kg CO2e équivalent à</div>
-          ${equiv ? `<ul>${equiv}</ul>` : '<div class="v">—</div>'}</div>
+      <div class="kpis imp">
+        <div class="kpi"><div class="l">CO2e moyen</div><div class="v">${media == null ? '—' : `${dec(media)} kg`}</div><div class="n">par produit · n = ${filas.length}</div></div>
+        <div class="kpi"><div class="l">CO2e total</div><div class="v">${filas.length ? `${dec(total, 1)} kg` : '—'}</div><div class="n">1 unité de chaque${tk.n ? ` · tickets : ${dec(tk.co2, 1)} kg` : ''}</div></div>
+        <div class="kpi"><div class="l">Part emballage</div><div class="v">${co2Tot ? `${dec((co2Emb / co2Tot) * 100, 1)} %` : '—'}</div><div class="n">du CO2e · n = ${conEmb.length}</div></div>
+        <div class="kpi"><div class="l">Reliés à Agribalyse</div><div class="v">${alim.length ? pct(conAgb, alim.length) + ' %' : '—'}</div><div class="n">${conAgb} / ${alim.length} aliments</div></div>
       </div>
+      ${equiv ? `<p class="eq-tit">Ces ${dec(total, 1)} kg CO2e, c’est autant que…</p><div class="eq-grid">${equiv}</div>` : ''}
       ${top ? `<div class="tabla" style="margin-top:12px"><table><thead><tr><th>Plus fort impact (par unité)</th><th class="num">kg CO2e</th><th class="num">mPt EF</th></tr></thead><tbody>${top}</tbody></table></div>` : ''}
       <p class="note">Valeurs génériques par kg de la catégorie d’aliment (pas de la marque exacte) × poids indiqué sur l’emballage (1 L ≈ 1 kg). Source : ${esc(agbListo?.source || 'AGRIBALYSE, ADEME')} ; part de l’emballage d’après Open Food Facts. Le score EF (mPt) résume les 16 indicateurs d’impact. Équivalences par personne : impactCO2.fr (ADEME) — voiture thermique 0,142, avion court 0,225 et TGV 0,0029 kg CO2e/km ; repas avec du bœuf 4,97 kg CO2e.</p>
     </div>`;

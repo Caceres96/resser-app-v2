@@ -538,3 +538,18 @@ body.en-inicio .brand .lema { font-size: 13px; margin-top: 4px; text-shadow: 0 1
 .kpi.equiv li + li { margin-top: 6px; }
 .kpi.equiv .eq-ic { font-size: 20px; line-height: 1.1; flex: none; }
 .kpi.equiv li strong { font-size: 17px; font-weight: 800; color: var(--terre-texte); }
+
+/* 1.14.1 : impact — mosaïque compacte 2 × 2 et équivalences en tuiles */
+.kpis.imp { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.kpis.imp .kpi { display: flex; flex-direction: column; padding: 12px; }
+.kpis.imp .l { font-weight: 600; }
+.kpis.imp .v { font-size: 24px; line-height: 1.15; margin-top: 4px; }
+.kpis.imp .n { margin-top: auto; padding-top: 4px; }
+.eq-tit { margin: 16px 2px 8px; font-size: 13px; font-weight: 600; color: var(--muted); }
+.eq-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+@media (min-width: 560px) { .eq-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+.eq { display: grid; grid-template-columns: auto 1fr; grid-template-rows: auto auto; column-gap: 10px; align-items: center;
+  padding: 10px 12px; border-radius: var(--radius); border: 1px solid var(--line); background: color-mix(in srgb, var(--verre, var(--card)) 70%, transparent); }
+.eq .eq-ic { grid-row: 1 / 3; font-size: 26px; line-height: 1; }
+.eq strong { font-size: 19px; font-weight: 800; color: var(--terre-texte); line-height: 1.1; }
+.eq .eq-l { font-size: 12px; color: var(--muted); }
