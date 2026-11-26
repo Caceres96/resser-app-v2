@@ -4,7 +4,7 @@ import {
 } from './reglas.js';
 import { lireTicket, lireTicketPdf, apparier, ajouterLibelle, libellesDe, similarite, detecterDate, detecterEnseigne, detecterTotal, requeteRecherche } from './ticket.js';
 
-const APP_VERSION = '1.16.1-beta';
+const APP_VERSION = '1.17.0-beta';
 // Version bêta : stockage séparé de l'application stable (même origine github.io, autre clé),
 // pour qu'une erreur ici ne touche jamais l'inventaire de la version stable.
 const KEY = 'resser.v2';
@@ -345,14 +345,14 @@ $('#enseignes').innerHTML = ENSEIGNES.map((e) => `<option value="${esc(e)}">`).j
 $('#communes').innerHTML = COMMUNES.map((c) => `<option value="${esc(c)}">`).join('');
 
 db.prefs.contexto ??= { enseigne: '', commune: '', fecha: hoy() };
-const CTX = { enseigne: '#ctx-enseigne', commune: '#ctx-commune', fecha: '#ctx-fecha' };
+const CTX = { enseigne: '#ctx-enseigne', commune: '#ctx-commune', fecha: '#ctx-fecha', personnes: '#ctx-personnes' };
 for (const [k, sel] of Object.entries(CTX)) {
   $(sel).value = db.prefs.contexto[k] || '';
   $(sel).addEventListener('change', () => { db.prefs.contexto[k] = $(sel).value.trim(); guardar(); resumirContexto(); });
 }
 function resumirContexto() {
   const c = db.prefs.contexto;
-  const partes = [db.prefs.nombre, c.enseigne, c.commune, c.fecha].filter(Boolean);
+  const partes = [db.prefs.nombre, c.enseigne, c.commune, c.fecha, Number(c.personnes) > 1 ? `${c.personnes} pers.` : ''].filter(Boolean);
   $('#contexto-resumen').textContent = partes.length ? `· ${partes.join(' · ')}` : '· à renseigner';
 }
 resumirContexto();
@@ -1427,6 +1427,7 @@ async function procesarTicket(lector, mensaje, sinArticulos) {
       commune: ctx.commune || '',
       total: detecterTotal(brut),
       remise_ticket: articles.remiseTicket || 0,
+      personnes: Math.max(1, Number(ctx.personnes) || 1),
       lignes: articles.map((a) => {
         const r = apparier(a.libelle, cat.liste);
         const top = r.niveau === 'aucun' ? null : r.cands[0];
@@ -1549,11 +1550,12 @@ function pintarTicket() {
         <p class="note">En rangeant vos courses, scannez les produits un par un, dans n’importe quel ordre : l’app trouve la ligne du ticket correspondante.</p>` : ''}
       ${n('sur') ? boton('todos', n('sur') === 1 ? 'Ajouter l’achat reconnu' : `Ajouter les ${n('sur')} achats reconnus`, 'primary grande wide') : ''}
       <details class="mini">
-        <summary>${lu ? 'Vérifier la date et le magasin (lus sur une image)' : 'Modifier la date et le magasin'}</summary>
+        <summary>${lu ? 'Vérifier la date, le magasin et les personnes' : 'Modifier la date, le magasin et les personnes'}${personasTicket(t) > 1 ? ` · ${personasTicket(t)} personnes` : ''}</summary>
         <div class="grid">
           <label class="field">Date d'achat<input type="date" data-tk="date" value="${esc(t.date)}"></label>
           <label class="field">Enseigne<input data-tk="enseigne" list="enseignes" value="${esc(t.enseigne)}"></label>
           <label class="field">Commune<input data-tk="commune" list="communes" value="${esc(t.commune)}"></label>
+          <label class="field">Courses pour combien de personnes ?<input type="number" min="1" max="12" step="1" inputmode="numeric" data-tk="personnes" value="${personasTicket(t)}"></label>
         </div>
       </details>
       ${/pend-sync/.test(controlTotal(t)) ? controlTotal(t) : ''}
@@ -1568,6 +1570,7 @@ function pintarTicket() {
 $('#ticket-vista').addEventListener('change', (e) => {
   const t = db.tickets.find((x) => x.id === ticketVu);
   if (e.target.id === 'ticket-otro') { ticketVu = e.target.value; pintarTicket(); return; }
+  if (t && e.target.dataset.tk === 'personnes') { t.personnes = Math.max(1, Math.round(Number(e.target.value)) || 1); guardar(); pintarTicket(); return; }
   if (t && e.target.dataset.tk) { t[e.target.dataset.tk] = e.target.value.trim(); guardar(); }
   // Libellé corrigé à la main : on relance le rapprochement de cette ligne avec le catalogue.
   if (t && e.target.dataset.li != null) {
@@ -1779,6 +1782,7 @@ function pintarBalance(t) {
     <div class="balance">
       <div class="field-lbl">Emballages de ce ticket</div>
       <div class="balance-total">${b.est ? '≈ ' : ''}${poids(b.g)}</div>
+      ${personasTicket(t) > 1 ? `<p class="note">soit ${b.est ? '≈ ' : ''}${poids(b.g / personasTicket(t))} par personne (courses pour ${personasTicket(t)})</p>` : ''}
       ${b.est ? `<p class="note">dont ${poids(b.est)} estimés (éléments semblables), en attendant la pesée</p>` : ''}
       <div class="balance-tri">${tri}</div>
       <p class="note">${b.elems} élément(s) d’emballage${b.prix ? ` · ${poids((b.g / b.prix) * 10)} par 10 € d’achats` : ''}${b.co2n ? ` · ${dec(b.co2, 1)} kg CO2e pour ${b.co2n} aliment(s) (Agribalyse)` : ''}</p>
@@ -1789,11 +1793,24 @@ function pintarBalance(t) {
 }
 
 // Synthèse : emballages achetés (tickets) — chiffre du mois, colonnes par mois, barre par ticket.
+function personasTicket(t) { return Math.max(1, Number(t.personnes) || Number(db.prefs.contexto?.personnes) || 1); }
+// Empreinte carbone moyenne par habitant et par an (t CO2e) : France 2023 (SDES/Insee, Chiffres clés du climat 2025),
+// dont alimentation 2,0 t (23 %) ; Union européenne 2023 (Eurostat, février 2026).
+var EMPREINTE = { fr: 8.5, frAlim: 2.0, ue: 9.0 };
+var resumenMes = null; // dernier mois des tickets : sert à la comparaison CO2
+
 function resumenTickets() {
+  resumenMes = null;
   if (!db.tickets.length) return { hero: '', lista: '' };
   const filas = db.tickets.map((t) => ({ t, b: balanceTicket(t) }));
   const mois = {};
-  filas.forEach(({ t, b }) => { const m = String(t.date || '').slice(0, 7); if (m) { mois[m] ??= { g: 0, c: 0, n: 0, t: 0 }; mois[m].g += b.g; mois[m].c += b.cubiertas; mois[m].n += b.n; mois[m].t++; } });
+  filas.forEach(({ t, b }) => {
+    const m = String(t.date || '').slice(0, 7);
+    if (!m) return;
+    const p = personasTicket(t);
+    mois[m] ??= { g: 0, gp: 0, co2: 0, co2p: 0, co2n: 0, c: 0, n: 0, t: 0, multi: false };
+    Object.assign(mois[m], { g: mois[m].g + b.g, gp: mois[m].gp + b.g / p, co2: mois[m].co2 + b.co2, co2p: mois[m].co2p + b.co2 / p, co2n: mois[m].co2n + b.co2n, c: mois[m].c + b.cubiertas, n: mois[m].n + b.n, t: mois[m].t + 1, multi: mois[m].multi || p > 1 });
+  });
   const conocidos = Object.keys(mois).sort();
   if (!conocidos.length) return { hero: '', lista: '' };
   // Les six derniers mois jusqu'au plus récent (mois vides compris).
@@ -1805,6 +1822,7 @@ function resumenTickets() {
     if (m >= conocidos[0] || i === 0) serie.push([m, mois[m]?.g || 0]);
   }
   const v = mois[fin];
+  resumenMes = { m: fin, ...v };
   const nomMes = (m, f) => new Date(`${m}-01T12:00:00`).toLocaleDateString('fr-FR', f);
   const max = Math.max(...serie.map((x) => x[1]), 1);
   const cols = serie.map(([m, g]) => `<div class="col" title="${esc(nomMes(m, { month: 'long', year: 'numeric' }))} : ${poids(g)}">
@@ -1816,6 +1834,7 @@ function resumenTickets() {
       <h3>Emballages achetés</h3>
       <div class="hero-n">${v.c ? poids(v.g) : '—'}</div>
       <p class="hero-sub">en ${esc(nomMes(fin, { month: 'long', year: 'numeric' }))} · ${v.t} ticket(s) · ${v.c} article(s) calculé(s) sur ${v.n}</p>
+      ${v.multi && v.c ? `<p class="hero-pp">soit <strong>${poids(v.gp)}</strong> par personne</p>` : ''}
       ${serie.length > 1 ? `<div class="cols" role="img" aria-label="Emballages par mois : ${serie.map(([m, g]) => `${nomMes(m, { month: 'long' })} ${poids(g)}`).join(', ')}">${cols}</div>` : ''}
       <p class="note">C’est un minimum tant que des articles restent à identifier ou à peser.</p>
     </div>`;
@@ -1896,6 +1915,35 @@ function seccionPrecios() {
     </div>`;
 }
 
+// Synthèse : CO2e des aliments achetés ce mois-ci, par personne, face à la moyenne française et européenne.
+function seccionComparacion() {
+  const v = resumenMes;
+  if (!v || !v.co2n) return '';
+  const mes = (t) => (t * 1000) / 12; // t/an → kg/mois
+  const nom = new Date(`${v.m}-01T12:00:00`).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
+  const enCours = v.m === hoy().slice(0, 7);
+  const items = [
+    { label: 'Vos courses alimentaires', v: v.co2p, accent: true, title: `${dec(v.co2p, 1)} kg CO2e par personne en ${nom}` },
+    { label: 'Français moyen · alimentation', v: mes(EMPREINTE.frAlim), title: '2,0 t CO2e par an et par habitant (2023)' },
+  ];
+  const totales = [
+    { label: 'Français moyen · tout compris', v: mes(EMPREINTE.fr), title: '8,5 t CO2e par an et par habitant (2023)' },
+    { label: 'Européen moyen (UE) · tout compris', v: mes(EMPREINTE.ue), title: '9,0 t CO2e par an et par habitant (2023)' },
+  ];
+  const kg = (x) => `${Math.round(x)} kg`;
+  return `
+    <div class="card graf">
+      <h3>Vous et la moyenne</h3>
+      <p class="note">CO2e par personne et par mois · ${esc(nom)}${enCours ? ' (mois en cours)' : ''}.</p>
+      ${listaBarras(items, kg)}
+      <p class="hero-sub" style="margin-top:10px">Vos courses = <strong>${pct(v.co2p, mes(EMPREINTE.frAlim))} %</strong> de l’alimentation d’un Français moyen sur un mois.</p>
+      <h4 class="graf-sous">Empreinte carbone totale moyenne</h4>
+      <p class="note">Tout compris (transports, logement, alimentation, biens, services), par personne et par mois.</p>
+      ${listaBarras(totales, kg)}
+      <p class="note">Vos chiffres ne comptent que les ${v.co2n} aliment(s) identifié(s) avec une valeur Agribalyse et un poids (pas les repas hors domicile) : c’est un minimum${enCours ? ', et le mois n’est pas fini' : ''}. Moyennes 2023 : France 8,5 t CO2e par an et par habitant, dont 2,0 t pour l’alimentation (SDES/Insee, Chiffres clés du climat 2025) ; Union européenne 9,0 t (Eurostat, 2026).</p>
+    </div>`;
+}
+
 // ---------- Petits graphiques de la Synthèse ----------
 const BACS = { jaune: 'Bac jaune', verre: 'Conteneur à verre', om: 'Ordures ménagères', nd: 'À déterminer' };
 const CLASES_TXT = { A: 'vérifiée et pesée', B: 'poids connu (déclaré ou estimé)', C: 'poids manquant', D: 'matériau manquant' };
@@ -1905,7 +1953,7 @@ function listaBarras(items, fmt) {
   const max = Math.max(...items.map((i) => i.v), 0) || 1;
   return `<ul class="mlist">${items.map((i) => `<li title="${esc(i.title || '')}">
       <div class="ml-top"><span class="ml-l">${esc(i.label)}</span><span class="ml-v">${fmt(i.v)}${i.sub ? ` <small>${esc(i.sub)}</small>` : ''}</span></div>
-      <div class="ml-track">${i.v ? `<div class="ml-fill" style="width:${Math.max(2, (i.v / max) * 100)}%"></div>` : ''}</div>${i.nota ? `<div class="ml-sub">${esc(i.nota)}</div>` : ''}</li>`).join('')}</ul>`;
+      <div class="ml-track">${i.v ? `<div class="ml-fill${i.accent ? ' accent' : ''}" style="width:${Math.max(2, (i.v / max) * 100)}%"></div>` : ''}</div>${i.nota ? `<div class="ml-sub">${esc(i.nota)}</div>` : ''}</li>`).join('')}</ul>`;
 }
 
 // Une barre découpée en parts (part du total imprimée dans les blocs assez larges) + légende.
@@ -2419,6 +2467,7 @@ function pintarResumen() {
     </div>
 
     ${seccionImpacto(refs)}
+    ${seccionComparacion()}
     ${tk.lista}
     ${seccionPrecios()}
 

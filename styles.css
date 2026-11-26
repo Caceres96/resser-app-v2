@@ -623,3 +623,8 @@ body.en-inicio .brand .lema { font-size: 13px; margin-top: 4px; text-shadow: 0 1
 /* 1.16.1 : promotions des tickets */
 .promo-l { display: block; font-size: 11px; font-weight: 600; font-style: normal; color: var(--terre-texte); }
 .precios .promo-l { display: inline; }
+
+/* 1.17.0 : par personne, comparaison avec la moyenne */
+.ml-fill.accent { background: var(--terre); }
+.hero-pp { margin: 6px 0 0; font-size: 15px; }
+.hero-pp strong { font-size: 20px; }
