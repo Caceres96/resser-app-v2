@@ -619,3 +619,7 @@ body.en-inicio .brand .lema { font-size: 13px; margin-top: 4px; text-shadow: 0 1
 .precios ul { list-style: none; margin: 6px 0 0; padding: 0; font-size: 14px; }
 .precios li { display: flex; justify-content: space-between; gap: 10px; padding: 4px 0; border-top: 1px solid var(--line); }
 .precios li span { color: var(--muted); }
+
+/* 1.16.1 : promotions des tickets */
+.promo-l { display: block; font-size: 11px; font-weight: 600; font-style: normal; color: var(--terre-texte); }
+.precios .promo-l { display: inline; }

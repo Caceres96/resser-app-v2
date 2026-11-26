@@ -4,7 +4,7 @@ import {
 } from './reglas.js';
 import { lireTicket, lireTicketPdf, apparier, ajouterLibelle, libellesDe, similarite, detecterDate, detecterEnseigne, detecterTotal, requeteRecherche } from './ticket.js';
 
-const APP_VERSION = '1.16.0-beta';
+const APP_VERSION = '1.16.1-beta';
 // Version bêta : stockage séparé de l'application stable (même origine github.io, autre clé),
 // pour qu'une erreur ici ne touche jamais l'inventaire de la version stable.
 const KEY = 'resser.v2';
@@ -1426,10 +1426,11 @@ async function procesarTicket(lector, mensaje, sinArticulos) {
       enseigne: detecterEnseigne(brut, ENSEIGNES) || ctx.enseigne || '',
       commune: ctx.commune || '',
       total: detecterTotal(brut),
+      remise_ticket: articles.remiseTicket || 0,
       lignes: articles.map((a) => {
         const r = apparier(a.libelle, cat.liste);
         const top = r.niveau === 'aucun' ? null : r.cands[0];
-        return { libelle: a.libelle, prix: a.prix, qte: a.qte, etat: r.niveau, gtin: top?.p.gtin || '', nom: top?.p.nom || '', score: top ? Math.round(top.score * 100) : 0 };
+        return { libelle: a.libelle, prix: a.prix, qte: a.qte, ...(a.remise ? { remise: a.remise, promos: a.promos } : {}), etat: r.niveau, gtin: top?.p.gtin || '', nom: top?.p.nom || '', score: top ? Math.round(top.score * 100) : 0 };
       }),
     };
     db.tickets.unshift(ticket);
@@ -1472,7 +1473,8 @@ let ticketVu = null;
 // Somme des articles lus comparée au total imprimé : un écart signale une ligne mal lue ou oubliée.
 function controlTotal(t) {
   if (t.total == null) return '';
-  const somme = t.lignes.reduce((s, l) => s + (l.prix || 0), 0);
+  // Articles − remises (lues ou marquées « promo ») − remises sur tout le ticket.
+  const somme = t.lignes.reduce((s, l) => s + (l.etat === 'promo' ? 0 : (l.prix || 0) - (l.remise || 0)), 0) - (t.remise_ticket || 0);
   const ecart = Math.round((t.total - somme) * 100) / 100;
   return Math.abs(ecart) < 0.02
     ? `<p class="note ok-sync">✓ Somme des articles = total du ticket (${euros(t.total)}) : toutes les lignes ont été lues.</p>`
@@ -1487,30 +1489,35 @@ const GRUPOS = [
   { etat: 'aucun', titre: 'À identifier', ouvert: true },
   { etat: 'sur', titre: 'Reconnus', ouvert: false },
   { etat: 'achat', titre: 'Achats ajoutés', ouvert: false },
+  { etat: 'promo', titre: 'Promotions', ouvert: false },
   { etat: 'ignore', titre: 'Ignorées', ouvert: false },
 ];
 const gruposAbiertos = new Set(GRUPOS.filter((g) => g.ouvert).map((g) => g.etat));
 
 // Libellé modifiable tant que l'achat n'est pas ajouté : corrige une erreur de lecture avant qu'elle soit apprise.
 const libEditable = (l, i) => `<input class="lib lib-edit" data-li="${i}" value="${esc(l.libelle)}" aria-label="Libellé lu sur le ticket (modifiable)" spellcheck="false">`;
-const precio = (l) => `<span class="prix">${l.qte > 1 ? `${l.qte} × ` : ''}${euros(l.prix)}</span>`;
+const precio = (l) => `<span class="prix">${l.qte > 1 ? `${l.qte} × ` : ''}${euros(l.prix)}${l.remise ? `<small class="promo-l">promo −${euros(l.remise)}</small>` : ''}</span>`;
+const botonPromo = boton('promo', 'C’est une promo', 'lnk');
 
 function pintarLinea(l, i) {
   if (l.etat === 'probable') {
     return `<div class="linea" data-i="${i}"><div class="cab">${libEditable(l, i)}${precio(l)}</div>
       <div class="que">C'est <strong>${esc(l.nom)}</strong> ?</div>
-      <div class="actions">${boton('oui', 'Oui', 'primary')}${boton('non', 'Non', 'ghost')}</div></div>`;
+      <div class="actions">${boton('oui', 'Oui', 'primary')}${boton('non', 'Non', 'ghost')}${botonPromo}</div></div>`;
   }
   if (l.etat === 'aucun') {
     return `<div class="linea" data-i="${i}"><div class="cab">${libEditable(l, i)}${precio(l)}</div>
       ${pintarSugerencias(l)}
-      <div class="actions">${boton('scanner', 'Scanner', 'primary')}${boton('sugerir', 'Chercher par le nom', 'secondary')}${boton('ignorer', 'Ignorer', 'ghost')}</div></div>`;
+      <div class="actions">${boton('scanner', 'Scanner', 'primary')}${boton('sugerir', 'Chercher par le nom', 'secondary')}${boton('ignorer', 'Ignorer', 'ghost')}${botonPromo}</div></div>`;
   }
   if (l.etat === 'sur') {
-    return `<div class="fila" data-i="${i}"><span class="fila-txt"><strong>${esc(l.nom)}</strong><span class="lib">${esc(l.libelle)}</span></span>${precio(l)}${boton('non', 'Pas ça', 'lnk')}</div>`;
+    return `<div class="fila" data-i="${i}"><span class="fila-txt"><strong>${esc(l.nom)}</strong><span class="lib">${esc(l.libelle)}</span></span>${precio(l)}${boton('non', 'Pas ça', 'lnk')}${botonPromo}</div>`;
   }
   if (l.etat === 'achat') {
-    return `<div class="fila" data-i="${i}"><span class="fila-txt"><strong>✓ ${esc(l.nom)}</strong><span class="lib">${esc(l.libelle)}</span></span>${precio(l)}</div>`;
+    return `<div class="fila" data-i="${i}"><span class="fila-txt"><strong>✓ ${esc(l.nom)}</strong><span class="lib">${esc(l.libelle)}</span></span>${precio(l)}${botonPromo}</div>`;
+  }
+  if (l.etat === 'promo') {
+    return `<div class="fila" data-i="${i}"><span class="fila-txt"><span class="lib">${esc(l.libelle)}</span><span class="lib">remise sur : ${esc(l.promoSur || 'tout le ticket')}</span></span><span class="prix">−${euros(l.prix)}</span>${boton('retablir', 'Rétablir', 'lnk')}</div>`;
   }
   return `<div class="fila" data-i="${i}"><span class="fila-txt"><span class="lib">${esc(l.libelle)}</span></span>${precio(l)}${boton('retablir', 'Rétablir', 'lnk')}</div>`;
 }
@@ -1530,12 +1537,12 @@ function pintarTicket() {
       <summary><strong>${g.titre}</strong> <span class="pill">${n(g.etat)}</span></summary>${filas}</details>`;
   }).join('');
   const anteriores = db.tickets.length > 1
-    ? `<label class="field">Autres tickets<select id="ticket-otro">${db.tickets.map((x) => `<option value="${x.id}"${x.id === t.id ? ' selected' : ''}>${esc(fechaCorta(x.date))} · ${esc(x.enseigne || '?')} · ${x.lignes.length} articles</option>`).join('')}</select></label>` : '';
+    ? `<label class="field">Autres tickets<select id="ticket-otro">${db.tickets.map((x) => `<option value="${x.id}"${x.id === t.id ? ' selected' : ''}>${esc(fechaCorta(x.date))} · ${esc(x.enseigne || '?')} · ${x.lignes.filter((l) => l.etat !== 'promo').length} articles</option>`).join('')}</select></label>` : '';
   const lu = t.source !== 'pdf-texte';
   vista.innerHTML = `
     <div class="card">
       <h3>${esc(t.enseigne || 'Magasin ?')} · ${esc(fechaCorta(t.date))}</h3>
-      <p class="note">${t.lignes.length} articles${t.total != null ? ` · ${euros(t.total)}` : ''} · ${reste ? `${reste} à traiter` : 'tout est traité'}</p>
+      <p class="note">${t.lignes.length - n('promo')} articles${n('promo') ? ` · ${n('promo')} promo(s)` : ''}${t.total != null ? ` · ${euros(t.total)}` : ''} · ${reste ? `${reste} à traiter` : 'tout est traité'}</p>
       <div class="bar avance"><div style="flex:${fait};background:var(--good)"></div><div style="flex:${reste}"></div></div>
       ${pintarBalance(t)}
       ${n('probable') + n('aucun') ? `${boton('deballer', db.prefs.deballage?.ticket === t.id ? 'Reprendre le déballage' : 'Déballer mes courses', 'secondary grande wide')}
@@ -1617,7 +1624,24 @@ ${faits === 1 ? 'L’achat déjà ajouté reste enregistré' : `Les ${faits} ach
   const i = Number(b.closest('[data-i]').dataset.i), l = t.lignes[i];
   if (b.dataset.a === 'achat' || b.dataset.a === 'oui') {
     if (await agregarCompra(t, i)) { toast(`Achat ajouté : ${l.nom}`); sincronizar([l.gtin]); }
+  } else if (b.dataset.a === 'promo') {
+    // La ligne est une remise : elle sort des achats et son montant est déduit de l'article du même nom
+    // (sinon de l'article juste au-dessus) ; sans article, c'est une remise sur tout le ticket.
+    const cands = t.lignes.map((x, j) => ({ x, j })).filter(({ x, j }) => j !== i && !['promo', 'ignore'].includes(x.etat));
+    const meme = cands.map((c) => ({ ...c, s: similarite(l.libelle, c.x.libelle) })).filter((c) => c.s >= 0.6).sort((a2, b2) => b2.s - a2.s || Math.abs(a2.j - i) - Math.abs(b2.j - i))[0];
+    const cible = meme || cands.filter((c) => c.j < i).at(-1) || null;
+    if (!confirm(`« ${l.libelle} » (${euros(l.prix)}) est une promotion ?\nElle ne comptera plus comme achat${cible ? ` et sera déduite de « ${cible.x.nom || cible.x.libelle} »` : ' et sera déduite du ticket'}.`)) return;
+    l.etat_avant = l.etat;
+    if (cible) { cible.x.remise = Math.round(((cible.x.remise || 0) + l.prix) * 100) / 100; l.promoDe = cible.j; l.promoSur = cible.x.nom || cible.x.libelle; }
+    else { t.remise_ticket = Math.round(((t.remise_ticket || 0) + l.prix) * 100) / 100; l.promoDe = -1; }
+    Object.assign(l, { etat: 'promo', gtin: '', nom: '', score: 0 });
   } else if (b.dataset.a === 'non' || b.dataset.a === 'retablir') {
+    if (l.etat === 'promo') {
+      const c = t.lignes[l.promoDe];
+      if (c) c.remise = Math.max(0, Math.round(((c.remise || 0) - l.prix) * 100) / 100) || undefined;
+      else t.remise_ticket = Math.max(0, Math.round(((t.remise_ticket || 0) - l.prix) * 100) / 100);
+      delete l.promoDe; delete l.promoSur;
+    }
     Object.assign(l, { etat: 'aucun', gtin: '', nom: '', score: 0 });
   } else if (b.dataset.a === 'ignorer') {
     l.etat = 'ignore';
@@ -1718,7 +1742,7 @@ async function agregarCompra(t, i) {
 // Poids d'une ligne = Σ (unités × poids) × quantité achetée. Les lignes ignorées sortent du calcul.
 function poids(g) { return g < 1000 ? `${Math.round(g)} g` : `${String(Math.round(g / 10) / 100).replace('.', ',')} kg`; }
 function balanceTicket(t) {
-  const lignes = t.lignes.filter((l) => l.etat !== 'ignore');
+  const lignes = t.lignes.filter((l) => l.etat !== 'ignore' && l.etat !== 'promo');
   const b = { n: lignes.length, pesar: 0, est: 0, cubiertas: 0, g: 0, prix: 0, elems: 0, tri: {}, fam: {}, co2: 0, co2n: 0 };
   lignes.forEach((l) => {
     const r = ['achat', 'sur'].includes(l.etat) && db.refs[l.gtin];
@@ -1727,7 +1751,7 @@ function balanceTicket(t) {
     if (!r.sin_envase && (!comps.length || comps.some((c) => num(c.peso_g) == null))) { if (pesoPendiente(r)) b.pesar++; return; }
     const q = l.qte || 1;
     b.cubiertas++;
-    b.prix += l.prix || 0;
+    b.prix += (l.prix || 0) - (l.remise || 0);
     comps.forEach((c) => {
       const u = (num(c.unidades) ?? 1) * q, g = u * num(c.peso_g), fam = familiaDe(c.material), tri = consignaTri(fam).id;
       b.g += g;
@@ -1810,12 +1834,17 @@ function resumenTickets() {
 
 // ---------- Prix payés : historique par produit (lignes de ticket reliées à un produit) ----------
 // Prix unitaire = total de la ligne ÷ quantité. Les produits vendus au poids varient avec la pesée.
+// Un point par ticket : plusieurs lignes du même produit dans un ticket sont additionnées (pas comparées entre elles).
+// Le prix comparé est le prix normal (hors promotion) ; la remise est gardée à part.
 function historialPrecios(gtin) {
   const h = [];
-  db.tickets.forEach((t) => t.lignes.forEach((l) => {
-    if (l.gtin !== gtin || !['achat', 'sur'].includes(l.etat) || !(l.prix > 0)) return;
-    h.push({ date: t.date || '', enseigne: t.enseigne || '', pu: l.prix / (l.qte || 1) });
-  }));
+  db.tickets.forEach((t) => {
+    const ls = t.lignes.filter((l) => l.gtin === gtin && ['achat', 'sur'].includes(l.etat) && l.prix > 0);
+    if (!ls.length) return;
+    const qte = ls.reduce((a, l) => a + (l.qte || 1), 0);
+    const brut = ls.reduce((a, l) => a + l.prix, 0), rem = ls.reduce((a, l) => a + (l.remise || 0), 0);
+    h.push({ date: t.date || '', enseigne: t.enseigne || '', pu: brut / qte, paye: (brut - rem) / qte, promo: rem > 0 });
+  });
   return h.sort((a, b) => a.date.localeCompare(b.date));
 }
 const variacion = (h) => (h.length > 1 ? (h[h.length - 1].pu - h[0].pu) / h[0].pu : null);
@@ -1828,9 +1857,9 @@ function bloquePrecios(r) {
   const h = historialPrecios(r.gtin);
   if (!h.length) return '';
   const v = variacion(h);
-  const filas = [...h].reverse().slice(0, 5).map((x) => `<li><span>${esc(fechaCorta(x.date))} · ${esc(x.enseigne || '?')}</span><strong>${euros(x.pu)}</strong></li>`).join('');
+  const filas = [...h].reverse().slice(0, 5).map((x) => `<li><span>${esc(fechaCorta(x.date))} · ${esc(x.enseigne || '?')}${x.promo ? ` · <em class="promo-l">promo : payé ${euros(x.paye)}</em>` : ''}</span><strong>${euros(x.pu)}</strong></li>`).join('');
   return `<div class="precios">
-      <div class="field-lbl">Prix payé${v != null ? ` · <span class="tend ${v >= 0.01 ? 'sube' : v <= -0.01 ? 'baja' : ''}">${tendencia(v)} ${pctSigno(v)}</span> depuis le ${esc(fechaCorta(h[0].date))}` : ''}</div>
+      <div class="field-lbl">Prix (hors promo)${v != null ? ` · <span class="tend ${v >= 0.01 ? 'sube' : v <= -0.01 ? 'baja' : ''}">${tendencia(v)} ${pctSigno(v)}</span> depuis le ${esc(fechaCorta(h[0].date))}` : ''}</div>
       <ul>${filas}</ul>
     </div>`;
 }
@@ -1849,7 +1878,7 @@ function seccionPrecios() {
     return `<li title="${esc(r.nombre || r.gtin)} : ${euros(a.pu)} → ${euros(b.pu)}">
         <div class="ml-top"><span class="ml-l">${esc(r.nombre || r.gtin)}</span><span class="ml-v">${pctSigno(v)} <small>${tendencia(v).split(' ')[1] || ''}</small></span></div>
         <div class="div-track"><span class="div-zero"></span>${Math.abs(v) >= 0.001 ? `<div class="div-fill ${v > 0 ? 'sube' : 'baja'}" style="${v > 0 ? 'left:50%' : `right:50%`};width:${w}%"></div>` : ''}</div>
-        <div class="ml-sub">${euros(a.pu)} (${esc(a.enseigne || '?')}, ${esc(fechaMes(a.date))}) → ${euros(b.pu)} (${esc(b.enseigne || '?')}, ${esc(fechaMes(b.date))}) · ${h.length} achats</div></li>`;
+        <div class="ml-sub">${euros(a.pu)} (${esc(a.enseigne || '?')}, ${esc(fechaMes(a.date))}) → ${euros(b.pu)} (${esc(b.enseigne || '?')}, ${esc(fechaMes(b.date))}) · ${h.length} tickets${h.some((x) => x.promo) ? ` · ${h.filter((x) => x.promo).length} en promo` : ''}</div></li>`;
   }).join('');
   const solos = items.length - comp.length;
   return `
@@ -1860,10 +1889,10 @@ function seccionPrecios() {
           <div class="kpi"><div class="l">Variation moyenne</div><div class="v">${pctSigno(media)}</div><div class="n">${comp.length} produit(s) achetés au moins 2 fois</div></div>
           <div class="kpi"><div class="l">Hausse / baisse</div><div class="v">${sube} <small>▲</small> · ${baja} <small>▼</small></div><div class="n">${comp.length - sube - baja} stable(s) (moins de 1 %)</div></div>
         </div>
-        <p class="note">Premier prix payé → dernier prix payé, par unité. À droite du trait : plus cher ; à gauche : moins cher.</p>
+        <p class="note">Premier prix → dernier prix, par unité et hors promo. À droite du trait : plus cher ; à gauche : moins cher.</p>
         <ul class="mlist">${filas}</ul>` : '<p class="note">Il faut au moins deux achats du même produit (deux tickets) pour comparer son prix.</p>'}
       ${solos ? `<p class="note">${solos} produit(s) acheté(s) une seule fois pour l’instant.</p>` : ''}
-      <p class="note">Prix lus sur les tickets (total de la ligne ÷ quantité). Un changement d’enseigne compte aussi ; pour les produits au poids, le prix suit la pesée.</p>
+      <p class="note">Prix normal lu sur les tickets (total de la ligne ÷ quantité), hors promotions : les remises sont mises à part. Un point par ticket. Un changement d’enseigne compte aussi ; pour les produits au poids, le prix suit la pesée.</p>
     </div>`;
 }
 

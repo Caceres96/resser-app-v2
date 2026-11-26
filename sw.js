@@ -5,7 +5,7 @@
 // Les caches portent le préfixe « resser-v2- » : la version stable partage la même origine
 // (caceres96.github.io) et ses caches ne doivent jamais être effacés par la bêta.
 const PREFIXE = 'resser-v2-';
-const CACHE = `${PREFIXE}29`;
+const CACHE = `${PREFIXE}30`;
 const SHELL = ['./', 'index.html', 'styles.css', 'app.js', 'reglas.js', 'ticket.js', 'manifest.webmanifest', 'icon.svg', 'icon-192.png', 'logo-creme.png', 'logo-vert.png', 'agribalyse.json', 'fondo-accueil.jpg'];
 const CDN = /^https:\/\/(cdn|fastly)\.jsdelivr\.net\/npm\/(barcode-detector|zxing-wasm|tesseract\.js|tesseract\.js-core|@tesseract\.js-data\/fra|pdfjs-dist)@/;
 

@@ -89,14 +89,24 @@ export function apparier(libelle, catalogue) {
 // ---------- Analyse des lignes ----------
 
 const IGNORER = /\b(total|tva|carte|cb|especes?|monnaie|rendu|siret|merci|ticket|articles?|remise|fidelite|cagnotte|avoir|caisse|magasin|tel|www|date|heure|net|payer|paiement|visa|mastercard|contact|sous)\b/i;
+// Lignes de promotion : montant négatif (« -0,70 » ou « 0,70- ») ou mot de remise. Elles ne sont pas des achats :
+// leur montant est déduit de l'article concerné (même nom, sinon la ligne juste au-dessus).
+const PROMO = /\b(remises?|promo\w*|reduc\w*|bon immediat|immediate?|avantages?|economies?|offerts?|coupons?|ristournes?|lot \d|\d+e a)\b|\d+\s?%/;
+const NIVEAU_TICKET = /\b(fidelite|cagnotte|carte|total|bon d achat|avoir)\b/;
 export function analyserLigne(brut) {
   // Un zéro lu comme une lettre devant les centimes (« e,00 », « O,99 ») redevient un chiffre.
   const t = String(brut || '').replace(/\s+/g, ' ').trim().replace(/(^|\s)[oOeD](?=[.,]\d{2}(?!\d))/g, '$10');
-  if (t.length < 4 || !/[a-zA-Z]{3}/.test(t) || IGNORER.test(t)) return null;
+  if (t.length < 4) return null;
   // Dernier prix de la ligne (l'OCR ajoute parfois du bruit après : « 8,82 Bit », « 6,41 E »).
   const prix = [...t.matchAll(/(\d{1,3}[.,]\d{2})(?!\d)/g)].at(-1);
+  const n = normaliser(t);
+  const negatif = prix && (/-\s*$/.test(t.slice(0, prix.index)) || /^\s*-/.test(t.slice(prix.index + prix[0].length)));
+  if (prix && !/\b(total|sous total)\b/.test(n) && (negatif || PROMO.test(n))) {
+    const libelle = t.slice(0, prix.index).replace(/[-:]+\s*$/, '').replace(/\s+/g, ' ').trim();
+    return { remise: Number(prix[1].replace(',', '.')), libelle, ticket: NIVEAU_TICKET.test(n) };
+  }
+  if (!/[a-zA-Z]{3}/.test(t) || IGNORER.test(t)) return null;
   if (!prix) return null; // une ligne article porte un prix
-  if (/-\s*$/.test(t.slice(0, prix.index))) return null; // montant négatif : ligne de remise
   let libelle = t.slice(0, prix.index);
   let qte = 1;
   // Quantité en tête (« 2 x YAOURT ») ou avant le prix total (« HEINZ … 2*2,84 5,68 » ; l'OCR lit parfois * comme +).
@@ -119,10 +129,23 @@ export function analyserLigne(brut) {
 const FIN_ARTICLES = /(total remises?|\btotal\b|sous[- ]?total|montant total|net a payer|\ba payer\b|^\s*\d+\s+articles?\b)/i;
 export function extraireArticles(lignes) {
   const articles = [];
+  articles.remiseTicket = 0;
+  let precedent = null; // article de la ligne juste au-dessus
   for (const l of lignes) {
     if (articles.length && FIN_ARTICLES.test(normaliser(l))) break;
     const a = analyserLigne(l);
-    if (a) articles.push(a);
+    if (!a) { precedent = null; continue; }
+    if (a.remise != null) {
+      // Remise : article du même nom (déjà lu), sinon l'article juste au-dessus ; sinon remise sur tout le ticket.
+      const nom = normaliser(a.libelle.replace(/remises?|promo\w*|reduc\w*|bon immediat|immediate?|avantages?|-?\d+\s?%/gi, ''));
+      const meme = nom.length >= 3 ? [...articles].reverse().find((x) => similarite(nom, x.libelle) >= 0.6) : null;
+      const cible = meme || (!a.ticket && precedent) || null;
+      if (cible) { cible.remise = Math.round(((cible.remise || 0) + a.remise) * 100) / 100; (cible.promos ??= []).push(a.libelle); }
+      else articles.remiseTicket = Math.round((articles.remiseTicket + a.remise) * 100) / 100;
+      continue;
+    }
+    articles.push(a);
+    precedent = a;
   }
   return articles;
 }
@@ -263,6 +286,7 @@ export async function lireTicketPdf(fichier, onProgress) {
     await page.render({ canvas: c, canvasContext: x, viewport: vp }).promise;
     const r = await lireTicket(c, (v) => onProgress && onProgress((n - 1 + v) / pages));
     brut.push(...r.brut); articles.push(...r.articles);
+    articles.remiseTicket = (articles.remiseTicket || 0) + (r.articles.remiseTicket || 0);
   }
   return { brut, articles, source: 'pdf-ocr' };
 }
