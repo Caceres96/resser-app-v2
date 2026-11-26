@@ -628,3 +628,33 @@ body.en-inicio .brand .lema { font-size: 13px; margin-top: 4px; text-shadow: 0 1
 .ml-fill.accent { background: var(--terre); }
 .hero-pp { margin: 6px 0 0; font-size: 15px; }
 .hero-pp strong { font-size: 20px; }
+
+/* 1.18.0 : guide de démarrage */
+.guia-btn { margin-left: auto; flex: none; width: 34px; height: 34px; padding: 0; border-radius: 50%; display: grid; place-items: center;
+  background: transparent; color: var(--top-ink); border: 1.5px solid color-mix(in srgb, var(--top-ink) 80%, transparent); font-size: 17px; font-weight: 800; box-shadow: none; }
+body.en-inicio .guia-btn { width: 40px; height: 40px; font-size: 19px; color: #fffffa; border-color: rgba(255, 255, 250, .85); }
+.guia-btn + .perfil-btn { margin-left: 8px; }
+.guia { position: fixed; inset: 0; z-index: 60; }
+/* Halo : un cadre transparent autour du bouton, le reste de l'écran assombri. */
+.guia-foco { position: fixed; border-radius: 16px; box-shadow: 0 0 0 9999px rgba(20, 24, 21, .62); outline: 3px solid var(--terre); outline-offset: 2px;
+  transition: all .25s ease; pointer-events: none; }
+/* Bulle (« nuage ») avec sa pointe vers le bouton. */
+.nube { position: fixed; z-index: 61; background: var(--card); color: var(--ink); border-radius: 18px; padding: 12px 14px 14px;
+  box-shadow: 0 14px 40px rgba(0, 0, 0, .35); transition: top .25s ease, left .25s ease; }
+.nube::after { content: ''; position: absolute; left: var(--pico, 50%); width: 16px; height: 16px; margin-left: -8px; background: var(--card); transform: rotate(45deg); border-radius: 3px; }
+.nube.abajo::after { top: -7px; }
+.nube.arriba::after { bottom: -7px; }
+.nube.centro::after { display: none; }
+.nube-top { display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--muted); }
+.nube-top .lnk { padding: 2px 0; font-size: 13px; }
+.nube h3 { margin: 4px 0 6px; font-size: 18px; }
+.nube p { margin: 0 0 12px; font-size: 14px; line-height: 1.45; color: var(--muted); }
+.nube-nav { display: grid; grid-template-columns: 1fr 1.4fr; gap: 10px; }
+.nube-nav button { padding-top: 10px; padding-bottom: 10px; }
+/* Accueil : deux boutons ronds plus compacts pour laisser la devise sur une ligne. */
+body.en-inicio .guia-btn, body.en-inicio .perfil-btn { width: 34px; height: 34px; }
+body.en-inicio .guia-btn { font-size: 17px; }
+body.en-inicio .perfil-btn svg { width: 19px; height: 19px; }
+body.en-inicio .brand { position: relative; }
+body.en-inicio .guia-btn { position: absolute; top: 4px; right: 42px; margin: 0; }
+body.en-inicio .guia-btn + .perfil-btn { position: absolute; top: 4px; right: 0; margin: 0; }

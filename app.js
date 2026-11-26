@@ -4,7 +4,7 @@ import {
 } from './reglas.js';
 import { lireTicket, lireTicketPdf, apparier, ajouterLibelle, libellesDe, similarite, detecterDate, detecterEnseigne, detecterTotal, requeteRecherche } from './ticket.js';
 
-const APP_VERSION = '1.17.0-beta';
+const APP_VERSION = '1.18.0-beta';
 // Version bêta : stockage séparé de l'application stable (même origine github.io, autre clé),
 // pour qu'une erreur ici ne touche jamais l'inventaire de la version stable.
 const KEY = 'resser.v2';
@@ -2805,3 +2805,110 @@ if ('serviceWorker' in navigator && location.protocol !== 'file:') {
 
 // Accueil : sous-titres vivants au démarrage.
 pintarInicio();
+
+// ---------- Guide de démarrage : visite guidée de l'accueil, avec des bulles qui montrent chaque bouton ----------
+// Les étapes dont le bouton est caché (ex. « À peser » vide) sont sautées.
+const GUIA = [
+  { t: 'Bienvenue dans Resser 👋', x: 'Resser suit les emballages de vos courses : de quoi ils sont faits, combien ils pèsent, où les jeter et leur impact. Suivez le guide : chaque bulle montre un bouton.' },
+  { sel: '#tab-inicio .t-scan', t: '📷 Scanner un code-barres', x: 'Touchez ici puis visez le code-barres. Produit connu : un geste pour confirmer. Nouveau : trois étapes (produit, rayon, emballages avec forme, matériau et poids).' },
+  { sel: '#tab-inicio .t-ticket', t: '🧾 Lire un ticket', x: 'Le plus fiable : le ticket PDF de l’enseigne (appli ou e-mail). Sinon une photo à plat. Les lignes reconnues s’ajoutent d’un geste ; les promotions sont mises à part.' },
+  { sel: '#ini-deballer', t: '🛍️ Déballer mes courses', x: 'En rangeant vos courses, scannez les produits un par un, dans n’importe quel ordre : l’app retrouve la ligne du ticket.' },
+  { sel: '#tab-inicio .menu [data-ir="ticket"]', t: '🛍️ Mes tickets et le déballage', x: () => `Retrouvez vos tickets et le bilan d’emballages de chacun.${visibleGuia(GUIA[3]) ? '' : ' Astuce « Déballer mes courses » : en rangeant, scannez les produits un par un, l’app retrouve la ligne du ticket.'}` },
+  { sel: '#ini-apeser', t: '⚖️ À peser', x: 'Les produits enregistrés avec « Peser plus tard » attendent ici. Quand l’emballage est vide, pesez un seul élément avec une balance de cuisine.' },
+  { sel: '#ini-inventaire', t: '🗂️ Inventaire', x: 'Vos produits rangés par catégorie : touchez une case de la mosaïque pour filtrer. Pas encore consommé ? « Peser plus tard » met un poids estimé en attendant.' },
+  { sel: '#tab-inicio .menu [data-ir="resumen"]', t: '📊 Synthèse', x: 'Emballages du mois (et par personne), matériaux, où les déposer, CO2 des aliments face au Français moyen, évolution des prix.' },
+  { sel: '#tab-inicio .menu [data-ir="dechets"]', t: '♻️ Autres déchets', x: 'Que faire d’un objet qui n’est pas un emballage : piles, textiles, ampoules, électronique…' },
+  { sel: '#ini-puntos', t: '📍 Points de collecte', x: 'Choisissez ce que vous voulez déposer : l’app trouve les points les plus proches de chez vous.' },
+  { sel: '#ini-equipe', t: '👥 Mon équipe', x: 'À remplir une fois : votre nom, la clé de l’équipe, le magasin et le nombre de personnes nourries par vos courses.' },
+  { sel: '#guia-btn', t: '❓ Revoir ce guide', x: 'Ce bouton relance la visite à tout moment. Bonnes courses !' },
+];
+let guiaPaso = 0;
+const visibleGuia = (g) => !g.sel || (document.querySelector(g.sel) && !document.querySelector(g.sel).closest('[hidden]') && document.querySelector(g.sel).offsetParent !== null);
+function abrirGuia() {
+  if (document.querySelector('.guia')) return;
+  if (!document.body.classList.contains('en-inicio')) mostrarTab('inicio');
+  const el = document.createElement('div');
+  el.className = 'guia';
+  el.setAttribute('role', 'dialog');
+  el.setAttribute('aria-modal', 'true');
+  el.setAttribute('aria-label', 'Guide de démarrage');
+  el.innerHTML = '<div class="guia-foco"></div><div class="nube" role="document"></div>';
+  document.body.append(el);
+  guiaPaso = 0;
+  el.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-g]');
+    if (!b) return;
+    if (b.dataset.g === 'cerrar') cerrarGuia();
+    else moverGuia(b.dataset.g === 'sig' ? 1 : -1);
+  });
+  window.addEventListener('resize', colocarGuia);
+  window.addEventListener('scroll', colocarGuia, { passive: true });
+  pintarGuia();
+}
+function moverGuia(d) {
+  let i = guiaPaso + d;
+  while (i >= 0 && i < GUIA.length && !visibleGuia(GUIA[i])) i += d;
+  if (i >= GUIA.length) return cerrarGuia();
+  if (i < 0) return;
+  guiaPaso = i;
+  pintarGuia();
+}
+function cerrarGuia() {
+  document.querySelector('.guia')?.remove();
+  window.removeEventListener('resize', colocarGuia);
+  window.removeEventListener('scroll', colocarGuia);
+  db.prefs.guide_vu = true;
+  guardar();
+}
+function pintarGuia() {
+  const el = document.querySelector('.guia');
+  if (!el) return;
+  const pasos = GUIA.filter(visibleGuia), n = pasos.indexOf(GUIA[guiaPaso]) + 1;
+  const ult = n === pasos.length;
+  const g = GUIA[guiaPaso];
+  el.querySelector('.nube').innerHTML = `
+    <div class="nube-top"><span>${n} / ${pasos.length}</span><button type="button" class="lnk" data-g="cerrar">Passer</button></div>
+    <h3>${esc(g.t)}</h3>
+    <p>${esc(typeof g.x === 'function' ? g.x() : g.x)}</p>
+    <div class="nube-nav">
+      ${n > 1 ? '<button type="button" class="ghost" data-g="ant">Précédent</button>' : '<span></span>'}
+      <button type="button" class="primary" data-g="sig">${ult ? 'C’est parti !' : 'Suivant'}</button>
+    </div>`;
+  const t = g.sel && document.querySelector(g.sel);
+  if (t) t.scrollIntoView({ block: 'center', behavior: 'instant' });
+  colocarGuia();
+  el.querySelector('[data-g="sig"]').focus({ preventScroll: true });
+}
+// Place le halo sur le bouton et la bulle au-dessus ou au-dessous, avec sa pointe vers le bouton.
+function colocarGuia() {
+  const el = document.querySelector('.guia');
+  if (!el) return;
+  const g = GUIA[guiaPaso], foco = el.querySelector('.guia-foco'), nube = el.querySelector('.nube');
+  const t = g.sel && document.querySelector(g.sel);
+  const vw = document.documentElement.clientWidth, vh = window.innerHeight;
+  const w = Math.min(340, vw - 24);
+  nube.style.width = `${w}px`;
+  if (!t) {
+    foco.style.cssText = `left:${vw / 2}px;top:${vh / 2}px;width:0;height:0;`;
+    nube.className = 'nube centro';
+    nube.style.left = `${(vw - w) / 2}px`;
+    nube.style.top = `${Math.max(12, (vh - nube.offsetHeight) / 2)}px`;
+    return;
+  }
+  const r = t.getBoundingClientRect(), m = 6;
+  foco.style.cssText = `left:${r.left - m}px;top:${r.top - m}px;width:${r.width + 2 * m}px;height:${r.height + 2 * m}px;`;
+  const hN = nube.offsetHeight, abajo = r.bottom + 14 + hN <= vh - 8 || r.top - 14 - hN < 8;
+  const left = Math.max(12, Math.min(vw - w - 12, r.left + r.width / 2 - w / 2));
+  nube.className = `nube ${abajo ? 'abajo' : 'arriba'}`;
+  nube.style.left = `${left}px`;
+  nube.style.top = `${abajo ? Math.min(vh - hN - 8, r.bottom + m + 12) : Math.max(8, r.top - m - 12 - hN)}px`;
+  nube.style.setProperty('--pico', `${Math.max(18, Math.min(w - 18, r.left + r.width / 2 - left))}px`);
+}
+document.addEventListener('keydown', (e) => {
+  if (!document.querySelector('.guia')) return;
+  if (e.key === 'Escape') cerrarGuia();
+  else if (e.key === 'ArrowRight') moverGuia(1);
+  else if (e.key === 'ArrowLeft') moverGuia(-1);
+});
+$('#guia-btn').addEventListener('click', () => abrirGuia());
+$('#ini-guia').addEventListener('click', () => abrirGuia());
