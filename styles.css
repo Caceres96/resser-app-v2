@@ -604,3 +604,18 @@ body.en-inicio .brand .lema { font-size: 13px; margin-top: 4px; text-shadow: 0 1
 .cl-A { background: var(--cl-A); } .cl-B { background: var(--cl-B); } .cl-C { background: var(--cl-C); } .cl-D { background: var(--cl-D); }
 .segbar .cl-D, .segbar .cl-C { color: #1f2421; }
 @media (prefers-color-scheme: dark) { .segbar .cl-A, .segbar .cl-B { color: #1f2421; } .segbar .cl-C, .segbar .cl-D { color: #fff; } }
+
+/* 1.16.0 : évolution des prix — barre divergente autour de zéro, hausse en terre cuite, baisse en sauge */
+.div-track { position: relative; height: 10px; margin-top: 5px; border-radius: 5px; background: var(--piste); }
+.div-zero { position: absolute; left: 50%; top: -4px; bottom: -4px; width: 2px; margin-left: -1px; background: var(--ink); border-radius: 1px; }
+.div-fill { position: absolute; top: 0; bottom: 0; border-radius: 5px; }
+.div-fill.sube { background: var(--terre); }
+.div-fill.baja { background: var(--barre); }
+.precios-kpi .v small { font-size: 16px; color: var(--muted); }
+.tend { font-weight: 700; }
+.tend.sube { color: var(--terre-texte); }
+.tend.baja { color: var(--good); }
+.precios { margin: 12px 0 4px; }
+.precios ul { list-style: none; margin: 6px 0 0; padding: 0; font-size: 14px; }
+.precios li { display: flex; justify-content: space-between; gap: 10px; padding: 4px 0; border-top: 1px solid var(--line); }
+.precios li span { color: var(--muted); }

@@ -4,7 +4,7 @@ import {
 } from './reglas.js';
 import { lireTicket, lireTicketPdf, apparier, ajouterLibelle, libellesDe, similarite, detecterDate, detecterEnseigne, detecterTotal, requeteRecherche } from './ticket.js';
 
-const APP_VERSION = '1.15.1-beta';
+const APP_VERSION = '1.16.0-beta';
 // Version bêta : stockage séparé de l'application stable (même origine github.io, autre clé),
 // pour qu'une erreur ici ne touche jamais l'inventaire de la version stable.
 const KEY = 'resser.v2';
@@ -793,6 +793,7 @@ function pintarEditor() {
     <div class="card">
       ${cabecera(r)}
       ${sinCodigo ? `<label class="field" style="margin-top:10px">Nom du produit<input data-k="nombre" value="${esc(r.nombre)}" placeholder="ex. Pommes Golden"></label>` : ''}
+      ${bloquePrecios(r)}
     </div>
 
     <div class="card">
@@ -893,6 +894,7 @@ function pintarRapido(r, ed) {
       ${bloqueDeballage(r)}
       <ul class="envases">${envases}</ul>
       ${botonesPuntos(r)}
+      ${bloquePrecios(r)}
       ${r.categoria ? `<p class="note">Rayon : ${esc(labelRayon(r.categoria))}${r._rayon_sug ? ' (suggéré)' : ''}</p>` : ''}
       ${foto || !nuevo ? '' : '<label class="lnk">Ajouter une photo (produit nouveau pour l’équipe)<input id="foto-producto" type="file" accept="image/*" capture="environment" hidden></label>'}
       <button type="button" id="confirmar" class="primary grande wide">C'est bien ça</button>
@@ -1806,6 +1808,65 @@ function resumenTickets() {
   return { hero, lista };
 }
 
+// ---------- Prix payés : historique par produit (lignes de ticket reliées à un produit) ----------
+// Prix unitaire = total de la ligne ÷ quantité. Les produits vendus au poids varient avec la pesée.
+function historialPrecios(gtin) {
+  const h = [];
+  db.tickets.forEach((t) => t.lignes.forEach((l) => {
+    if (l.gtin !== gtin || !['achat', 'sur'].includes(l.etat) || !(l.prix > 0)) return;
+    h.push({ date: t.date || '', enseigne: t.enseigne || '', pu: l.prix / (l.qte || 1) });
+  }));
+  return h.sort((a, b) => a.date.localeCompare(b.date));
+}
+const variacion = (h) => (h.length > 1 ? (h[h.length - 1].pu - h[0].pu) / h[0].pu : null);
+const pctSigno = (v) => `${v > 0 ? '+' : v < 0 ? '−' : ''}${String(Math.abs(Math.round(v * 1000) / 10)).replace('.', ',')} %`;
+const fechaMes = (iso) => (iso ? new Date(iso).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' }) : '');
+const tendencia = (v) => (v == null ? '' : v >= 0.01 ? '▲ hausse' : v <= -0.01 ? '▼ baisse' : '＝ stable');
+
+// Fiche produit : prix payés, du plus récent au plus ancien.
+function bloquePrecios(r) {
+  const h = historialPrecios(r.gtin);
+  if (!h.length) return '';
+  const v = variacion(h);
+  const filas = [...h].reverse().slice(0, 5).map((x) => `<li><span>${esc(fechaCorta(x.date))} · ${esc(x.enseigne || '?')}</span><strong>${euros(x.pu)}</strong></li>`).join('');
+  return `<div class="precios">
+      <div class="field-lbl">Prix payé${v != null ? ` · <span class="tend ${v >= 0.01 ? 'sube' : v <= -0.01 ? 'baja' : ''}">${tendencia(v)} ${pctSigno(v)}</span> depuis le ${esc(fechaCorta(h[0].date))}` : ''}</div>
+      <ul>${filas}</ul>
+    </div>`;
+}
+
+// Synthèse : produits achetés au moins deux fois, premier prix → dernier prix.
+function seccionPrecios() {
+  const items = Object.values(db.refs).map((r) => ({ r, h: historialPrecios(r.gtin) })).filter((x) => x.h.length);
+  if (!items.length) return '';
+  const comp = items.filter((x) => x.h.length > 1).map((x) => ({ ...x, v: variacion(x.h) })).sort((a, b) => b.v - a.v);
+  const sube = comp.filter((x) => x.v >= 0.01).length, baja = comp.filter((x) => x.v <= -0.01).length;
+  const media = comp.length ? comp.reduce((a, x) => a + x.v, 0) / comp.length : null;
+  const max = Math.max(...comp.map((x) => Math.abs(x.v)), 0.05);
+  const filas = comp.map(({ r, h, v }) => {
+    const a = h[0], b = h[h.length - 1];
+    const w = Math.max(2, (Math.abs(v) / max) * 50);
+    return `<li title="${esc(r.nombre || r.gtin)} : ${euros(a.pu)} → ${euros(b.pu)}">
+        <div class="ml-top"><span class="ml-l">${esc(r.nombre || r.gtin)}</span><span class="ml-v">${pctSigno(v)} <small>${tendencia(v).split(' ')[1] || ''}</small></span></div>
+        <div class="div-track"><span class="div-zero"></span>${Math.abs(v) >= 0.001 ? `<div class="div-fill ${v > 0 ? 'sube' : 'baja'}" style="${v > 0 ? 'left:50%' : `right:50%`};width:${w}%"></div>` : ''}</div>
+        <div class="ml-sub">${euros(a.pu)} (${esc(a.enseigne || '?')}, ${esc(fechaMes(a.date))}) → ${euros(b.pu)} (${esc(b.enseigne || '?')}, ${esc(fechaMes(b.date))}) · ${h.length} achats</div></li>`;
+  }).join('');
+  const solos = items.length - comp.length;
+  return `
+    <div class="card graf">
+      <h3>Évolution des prix</h3>
+      ${comp.length ? `
+        <div class="kpis imp precios-kpi">
+          <div class="kpi"><div class="l">Variation moyenne</div><div class="v">${pctSigno(media)}</div><div class="n">${comp.length} produit(s) achetés au moins 2 fois</div></div>
+          <div class="kpi"><div class="l">Hausse / baisse</div><div class="v">${sube} <small>▲</small> · ${baja} <small>▼</small></div><div class="n">${comp.length - sube - baja} stable(s) (moins de 1 %)</div></div>
+        </div>
+        <p class="note">Premier prix payé → dernier prix payé, par unité. À droite du trait : plus cher ; à gauche : moins cher.</p>
+        <ul class="mlist">${filas}</ul>` : '<p class="note">Il faut au moins deux achats du même produit (deux tickets) pour comparer son prix.</p>'}
+      ${solos ? `<p class="note">${solos} produit(s) acheté(s) une seule fois pour l’instant.</p>` : ''}
+      <p class="note">Prix lus sur les tickets (total de la ligne ÷ quantité). Un changement d’enseigne compte aussi ; pour les produits au poids, le prix suit la pesée.</p>
+    </div>`;
+}
+
 // ---------- Petits graphiques de la Synthèse ----------
 const BACS = { jaune: 'Bac jaune', verre: 'Conteneur à verre', om: 'Ordures ménagères', nd: 'À déterminer' };
 const CLASES_TXT = { A: 'vérifiée et pesée', B: 'poids connu (déclaré ou estimé)', C: 'poids manquant', D: 'matériau manquant' };
@@ -2330,6 +2391,7 @@ function pintarResumen() {
 
     ${seccionImpacto(refs)}
     ${tk.lista}
+    ${seccionPrecios()}
 
     <div class="card graf">
       <h3>Fiabilité des données</h3>
