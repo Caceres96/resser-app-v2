@@ -4,7 +4,7 @@ import {
 } from './reglas.js';
 import { lireTicket, lireTicketPdf, apparier, ajouterLibelle, libellesDe, similarite, detecterDate, detecterEnseigne, detecterTotal, requeteRecherche } from './ticket.js';
 
-const APP_VERSION = '1.14.1-beta';
+const APP_VERSION = '1.15.0-beta';
 // Version bêta : stockage séparé de l'application stable (même origine github.io, autre clé),
 // pour qu'une erreur ici ne touche jamais l'inventaire de la version stable.
 const KEY = 'resser.v2';
@@ -1762,22 +1762,78 @@ function pintarBalance(t) {
     </div>`;
 }
 
-// Synthèse : bilan de chaque ticket et total par mois.
-function seccionTickets() {
-  if (!db.tickets.length) return '';
+// Synthèse : emballages achetés (tickets) — chiffre du mois, colonnes par mois, barre par ticket.
+function resumenTickets() {
+  if (!db.tickets.length) return { hero: '', lista: '' };
   const filas = db.tickets.map((t) => ({ t, b: balanceTicket(t) }));
   const mois = {};
-  filas.forEach(({ t, b }) => { const m = String(t.date || '').slice(0, 7); if (m) { mois[m] ??= { g: 0, c: 0, n: 0 }; mois[m].g += b.g; mois[m].c += b.cubiertas; mois[m].n += b.n; } });
-  const lignes = filas.map(({ t, b }) => `<tr><td>${esc(fechaCorta(t.date))}<br><span class="note">${esc(t.enseigne || '?')}</span></td><td class="num">${b.cubiertas ? poids(b.g) : '—'}</td><td class="num">${b.cubiertas}/${b.n}</td></tr>`).join('');
-  const parMois = Object.entries(mois).sort((x, y) => y[0].localeCompare(x[0]))
-    .map(([m, v]) => `<tr><td>${esc(m)}</td><td class="num">${v.c ? poids(v.g) : '—'}</td><td class="num">${v.c}/${v.n}</td></tr>`).join('');
-  return `
-    <div class="card">
-      <h3>Emballages par ticket</h3>
-      <div class="tabla"><table><thead><tr><th>Ticket</th><th class="num">Emballages</th><th class="num">Articles calculés</th></tr></thead><tbody>${lignes}</tbody></table></div>
-      <div class="tabla" style="margin-top:12px"><table><thead><tr><th>Mois</th><th class="num">Emballages</th><th class="num">Articles calculés</th></tr></thead><tbody>${parMois}</tbody></table></div>
-      <p class="note">Somme des poids d’emballage des articles identifiés (poids par élément × quantité achetée). Tant que des articles restent à identifier, c’est un minimum.</p>
+  filas.forEach(({ t, b }) => { const m = String(t.date || '').slice(0, 7); if (m) { mois[m] ??= { g: 0, c: 0, n: 0, t: 0 }; mois[m].g += b.g; mois[m].c += b.cubiertas; mois[m].n += b.n; mois[m].t++; } });
+  const conocidos = Object.keys(mois).sort();
+  if (!conocidos.length) return { hero: '', lista: '' };
+  // Les six derniers mois jusqu'au plus récent (mois vides compris).
+  const fin = conocidos[conocidos.length - 1];
+  const serie = [];
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(`${fin}-01T12:00:00`); d.setMonth(d.getMonth() - i);
+    const m = d.toISOString().slice(0, 7);
+    if (m >= conocidos[0] || i === 0) serie.push([m, mois[m]?.g || 0]);
+  }
+  const v = mois[fin];
+  const nomMes = (m, f) => new Date(`${m}-01T12:00:00`).toLocaleDateString('fr-FR', f);
+  const max = Math.max(...serie.map((x) => x[1]), 1);
+  const cols = serie.map(([m, g]) => `<div class="col" title="${esc(nomMes(m, { month: 'long', year: 'numeric' }))} : ${poids(g)}">
+      <span class="col-v">${g ? poids(g) : ''}</span>
+      <div class="col-bar${m === fin ? ' accent' : ''}" style="height:${g ? Math.max(4, (g / max) * 100) : 0}%"></div>
+      <span class="col-l">${esc(nomMes(m, { month: 'short' }))}</span></div>`).join('');
+  const hero = `
+    <div class="card graf hero-emb">
+      <h3>Emballages achetés</h3>
+      <div class="hero-n">${v.c ? poids(v.g) : '—'}</div>
+      <p class="hero-sub">en ${esc(nomMes(fin, { month: 'long', year: 'numeric' }))} · ${v.t} ticket(s) · ${v.c} article(s) calculé(s) sur ${v.n}</p>
+      ${serie.length > 1 ? `<div class="cols" role="img" aria-label="Emballages par mois : ${serie.map(([m, g]) => `${nomMes(m, { month: 'long' })} ${poids(g)}`).join(', ')}">${cols}</div>` : ''}
+      <p class="note">C’est un minimum tant que des articles restent à identifier ou à peser.</p>
     </div>`;
+  const items = filas.map(({ t, b }) => ({
+    label: `${fechaCorta(t.date)} · ${t.enseigne || '?'}`, v: b.cubiertas ? b.g : 0,
+    sub: `${b.cubiertas}/${b.n} articles`, title: `${t.enseigne || 'Ticket'} du ${fechaCorta(t.date)} : ${b.cubiertas ? poids(b.g) : 'pas encore calculé'}`,
+  }));
+  const lista = `
+    <div class="card graf">
+      <h3>Par ticket</h3>
+      ${listaBarras(items, (g) => (g ? poids(g) : '—'))}
+      <p class="note">Poids d’emballage des articles identifiés (poids par élément × quantité achetée).</p>
+    </div>`;
+  return { hero, lista };
+}
+
+// ---------- Petits graphiques de la Synthèse ----------
+const BACS = { jaune: 'Bac jaune', verre: 'Conteneur à verre', om: 'Ordures ménagères', nd: 'À déterminer' };
+const CLASES_TXT = { A: 'vérifiée et pesée', B: 'poids connu (déclaré ou estimé)', C: 'poids manquant', D: 'matériau manquant' };
+
+// Barres horizontales classées, une seule couleur : nom et valeur au-dessus, barre dessous.
+function listaBarras(items, fmt) {
+  const max = Math.max(...items.map((i) => i.v), 0) || 1;
+  return `<ul class="mlist">${items.map((i) => `<li title="${esc(i.title || '')}">
+      <div class="ml-top"><span class="ml-l">${esc(i.label)}</span><span class="ml-v">${fmt(i.v)}${i.sub ? ` <small>${esc(i.sub)}</small>` : ''}</span></div>
+      <div class="ml-track">${i.v ? `<div class="ml-fill" style="width:${Math.max(2, (i.v / max) * 100)}%"></div>` : ''}</div></li>`).join('')}</ul>`;
+}
+
+// Une barre découpée en parts (part du total imprimée dans les blocs assez larges) + légende.
+function barraSegmentos(partes, total, nombre) {
+  if (!partes.length || !total) return '<p class="note">Pas encore de données.</p>';
+  const ps = partes.map((x) => ({ ...x, p: pct(x.v, total) }));
+  return `<div class="segbar" role="img" aria-label="${esc(nombre)} : ${ps.map((x) => `${x.label} ${x.p} %`).join(', ')}">
+      ${ps.map((x) => `<div class="${x.cls}" style="flex:${x.v}" title="${esc(x.label)} : ${x.v} (${x.p} %)">${x.p >= 14 ? `${x.p} %` : ''}</div>`).join('')}</div>
+    <ul class="leyenda">${ps.map((x) => `<li><span class="sw ${x.cls}"></span><span>${esc(x.label)} <span class="muted">(${x.v}${x.p < 14 ? ` · ${x.p} %` : ''})</span></span></li>`).join('')}</ul>`;
+}
+
+// Jauge avec repère d'objectif ; l'état est dit en mots, pas seulement en couleur.
+function medidor(label, a, b, meta) {
+  const p = pct(a, b), ok = meta != null && b && a / b >= meta;
+  return `<li class="meter">
+      <div class="ml-top"><span class="ml-l">${esc(label)}</span><span class="ml-v">${b ? `${p} %` : '—'}</span></div>
+      <div class="ml-track">${b && p ? `<div class="ml-fill" style="width:${p}%"></div>` : ''}${meta != null ? `<span class="meta" style="left:${meta * 100}%" title="Objectif ${Math.round(meta * 100)} %"></span>` : ''}</div>
+      <div class="ml-sub">${a} / ${b} référence(s)${meta != null ? ` · objectif ${Math.round(meta * 100)} % <span class="st ${ok ? 'ok' : 'no'}">${ok ? '✓ atteint' : '○ pas encore'}</span>` : ''}</div></li>`;
 }
 
 // ---------- Accueil : sous-titres vivants et raccourcis ----------
@@ -2215,9 +2271,6 @@ function pintarResumen() {
   const masas = refs.map(masaPlastico).filter((m) => m != null);
   const media = masas.length ? masas.reduce((s, v) => s + v, 0) / masas.length : null;
 
-  const colores = { A: '#2c7a4b', B: '#5d9c3a', C: '#c98a1c', D: '#b3362b' };
-  const barraClases = ['A', 'B', 'C', 'D'].filter((k) => I.clases[k])
-    .map((k) => `<div style="flex:${I.clases[k]};background:${colores[k]}" title="${k} : ${I.clases[k]}">${k} ${I.clases[k]}</div>`).join('');
 
   const filasCat = [...SECCIONES, { id: '', label: 'Rayon à choisir' }].map((c) => {
     const sub = indicadores(refs.filter((r) => seccionDe(r.categoria) === c.id));
@@ -2226,48 +2279,76 @@ function pintarResumen() {
       <td class="num">${pct(sub.material, sub.n)} %</td><td class="num">${pct(sub.masa, sub.n)} %</td></tr>`;
   }).join('');
 
-  const filasFam = Object.entries(unidadesFam).sort((a, b) => b[1] - a[1])
-    .map(([f, u]) => `<tr><td><span class="dot" style="background:${FAMILIAS[f].color}"></span>${esc(FAMILIAS[f].label)}</td><td class="num">${u}</td><td class="num">${pct(u, totalU)} %</td></tr>`).join('');
-  const filasTri = Object.entries(consignas).sort((a, b) => b[1] - a[1])
-    .map(([t, u]) => `<tr><td>${esc(t)}</td><td class="num">${u}</td><td class="num">${pct(u, totalU)} %</td></tr>`).join('');
+
+  // Matériaux : grammes d'emballage par famille (une unité de vente de chaque référence).
+  const famG = {}, famU = {};
+  let sinPeso = 0;
+  refs.forEach((r) => (r.componentes || []).forEach((c) => {
+    const f = familiaDe(c.material), u = num(c.unidades) ?? 1, pg = num(c.peso_g);
+    famU[f] = (famU[f] || 0) + u;
+    if (pg != null) famG[f] = (famG[f] || 0) + u * pg; else sinPeso += u;
+  }));
+  const totG = Object.values(famG).reduce((a, v) => a + v, 0);
+  const porGramos = totG > 0;
+  const mats = Object.keys(famU).map((f) => ({ f, v: porGramos ? famG[f] || 0 : famU[f] }))
+    .filter((x) => x.v > 0)
+    .sort((a, b) => b.v - a.v)
+    .map(({ f, v }) => ({
+      label: FAMILIAS[f].label, v,
+      sub: `${pct(v, porGramos ? totG : totalU)} % · ${famU[f]} élément(s)`,
+      title: `${FAMILIAS[f].label} : ${porGramos ? poids(famG[f] || 0) : `${famU[f]} élément(s)`}`,
+    }));
+
+  // Où les déposer : éléments par contenant.
+  const bacs = {};
+  refs.forEach((r) => (r.componentes || []).forEach((c) => {
+    const id = consignaTri(familiaDe(c.material)).id;
+    bacs[id] = (bacs[id] || 0) + (num(c.unidades) ?? 1);
+  }));
+  const partesBac = ['jaune', 'verre', 'om', 'nd'].filter((k) => bacs[k]).map((k) => ({ cls: `bac-${k}`, label: BACS[k], v: bacs[k] }));
+
+  const partesClase = ['A', 'B', 'C', 'D'].filter((k) => I.clases[k]).map((k) => ({ cls: `cl-${k}`, label: `${k} · ${CLASES_TXT[k]}`, v: I.clases[k] }));
+  const tk = resumenTickets();
 
   el.innerHTML = `
-    ${I.n < 10 ? `<div class="card note">Seulement ${I.n} référence(s) : les pourcentages sont encore très instables. Le premier jalon du plan est de 10 produits.</div>` : ''}
-    <div class="kpis">
-      ${kpi('Couverture produit (trouvés dans une base)', I.encontrados, I.n, METAS.producto)}
-      ${kpi('Couverture matériau (classes A–C)', I.material, I.n, METAS.material)}
-      ${kpi('Couverture masse (classes A–B)', I.masa, I.n, METAS.masa)}
-      ${kpi('Données de la base correctes (réf. évaluées)', correctas, evaluadas.length, null)}
+    ${I.n < 10 ? `<div class="card note">Seulement ${I.n} référence(s) : les chiffres sont encore très instables. Le premier jalon du plan est de 10 produits.</div>` : ''}
+    ${tk.hero}
+
+    <div class="card graf">
+      <h3>De quoi sont faits vos emballages</h3>
+      <p class="note">${porGramos ? 'Poids d’emballage' : 'Nombre d’éléments'} par matériau, pour une unité de chaque produit enregistré${porGramos ? ` · total ${poids(totG)}` : ''}.</p>
+      ${listaBarras(mats, porGramos ? poids : (v) => `${v}`)}
+      ${porGramos && sinPeso ? `<p class="note">${sinPeso} élément(s) sans poids ne sont pas comptés.</p>` : ''}
     </div>
 
-    <div class="card" style="margin-top:14px">
-      <h3>Classes de qualité</h3>
-      <div class="bar">${barraClases}</div>
-      <p class="note">${I.verificados} référence(s) sur ${I.n} vérifiée(s) physiquement · ${vrac} vendue(s) sans emballage.</p>
-      <p class="note">${media == null ? 'Aucune référence avec une masse plastique quantifiée pour l’instant.' : `Masse plastique moyenne (classes A–B, n = ${masas.length}) : ${g1(media)} g par unité de vente.`}</p>
-    </div>
-
-    <div class="card">
-      <h3>Par rayon</h3>
-      <div class="tabla"><table>
-        <thead><tr><th>Rayon</th><th class="num">n</th><th class="num">Produit</th><th class="num">Matériau</th><th class="num">Masse</th></tr></thead>
-        <tbody>${filasCat}</tbody>
-      </table></div>
-    </div>
-
-    <div class="card">
-      <h3>Composants par matériau</h3>
-      <p class="note">Unités de composant cumulées sur une unité de vente de chaque référence (n = ${totalU}).</p>
-      <div class="tabla"><table><thead><tr><th>Famille</th><th class="num">Unités</th><th class="num">%</th></tr></thead><tbody>${filasFam}</tbody></table></div>
-    </div>
-
-    <div class="card">
-      <h3>Destination selon la consigne de tri</h3>
-      <div class="tabla"><table><thead><tr><th>Contenant</th><th class="num">Unités</th><th class="num">%</th></tr></thead><tbody>${filasTri}</tbody></table></div>
+    <div class="card graf">
+      <h3>Où les déposer</h3>
+      <p class="note">Éléments d’emballage (n = ${totalU}) selon la consigne de tri.</p>
+      ${barraSegmentos(partesBac, totalU, 'Éléments par contenant')}
       <p class="note">${esc(FUENTE_TRI)}</p>
     </div>
+
     ${seccionImpacto(refs)}
-    ${seccionTickets()}`;
+    ${tk.lista}
+
+    <div class="card graf">
+      <h3>Fiabilité des données</h3>
+      <ul class="mlist">
+        ${medidor('Produits trouvés dans une base', I.encontrados, I.n, METAS.producto)}
+        ${medidor('Matériau connu (classes A à C)', I.material, I.n, METAS.material)}
+        ${medidor('Poids connu (classes A et B)', I.masa, I.n, METAS.masa)}
+        ${evaluadas.length ? medidor('Données de la base justes', correctas, evaluadas.length, null) : ''}
+      </ul>
+      <h4 class="graf-sous">Qualité de chaque fiche</h4>
+      ${barraSegmentos(partesClase, I.n, 'Références par classe de qualité')}
+      <p class="note">${I.verificados} référence(s) sur ${I.n} vérifiée(s) en main · ${vrac} vendue(s) sans emballage. ${media == null ? '' : `Plastique moyen (classes A–B, n = ${masas.length}) : ${g1(media)} g par produit.`}</p>
+      <details class="mini"><summary>Détail par rayon</summary>
+        <div class="tabla"><table>
+          <thead><tr><th>Rayon</th><th class="num">n</th><th class="num">Produit</th><th class="num">Matériau</th><th class="num">Poids</th></tr></thead>
+          <tbody>${filasCat}</tbody>
+        </table></div>
+      </details>
+    </div>`;
 }
 
 // Équivalences d'un total de CO2e (kg CO2e par personne, impactCO2.fr — ADEME, consulté le 2026-11-16).
